@@ -114,16 +114,22 @@ func (e ErrStorage) Error() string {
 
 // A Query is derived from an a raw query string and can be run against an engine
 // it is associated with.
+// Query是从一个raw query string继承而来的接口并且可以和绑定的引擎一起使用
 type Query interface {
 	// Exec processes the query. Can only be called once.
+	// Exec执行查询，只能被调用一次
 	Exec(ctx context.Context) *Result
 	// Close recovers memory used by the query result.
+	// Close恢复query result占用的内存
 	Close()
 	// Statement returns the parsed statement of the query.
+	// Statement返回query的解析声明
 	Statement() Statement
 	// Stats returns statistics about the lifetime of the query.
+	// Stats返回查询的生命周期数据
 	Stats() *stats.QueryTimers
 	// Cancel signals that a running query execution should be aborted.
+	// Cancel表示一个正在执行的查询应该被终止
 	Cancel()
 }
 
@@ -288,6 +294,7 @@ func NewEngine(opts EngineOpts) *Engine {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
+// NewInstantQuery返回对于给定表达式在给定时间的查询结果
 func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (Query, error) {
 	expr, err := ParseExpr(qs)
 	if err != nil {

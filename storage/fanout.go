@@ -35,6 +35,7 @@ type fanout struct {
 
 // NewFanout returns a new fan-out Storage, which proxies reads and writes
 // through to multiple underlying storages.
+// NewFanout返回一个新的fan-out Storage，它提供了对于多个底层storages读写的代理
 func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Storage {
 	return &fanout{
 		logger:      logger,

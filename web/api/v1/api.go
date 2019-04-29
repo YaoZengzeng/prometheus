@@ -66,6 +66,7 @@ const (
 
 type errorType string
 
+// 查询prometheus可能发生的错误
 const (
 	errorNone        errorType = ""
 	errorTimeout     errorType = "timeout"
@@ -108,6 +109,7 @@ type rulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+// 返回的查询json的接口
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -116,13 +118,16 @@ type response struct {
 	Warnings  []string    `json:"warnings,omitempty"`
 }
 
+// prometheus API返回的结果
 type apiFuncResult struct {
+	// data表示结果数据
 	data      interface{}
 	err       *apiError
 	warnings  storage.Warnings
 	finalizer func()
 }
 
+// apiFunc接收一个http请求并且返回一个apiFuncResult的结构体
 type apiFunc func(r *http.Request) apiFuncResult
 
 // TSDBAdmin defines the tsdb interfaces used by the v1 API for admin operations.
@@ -135,6 +140,7 @@ type TSDBAdmin interface {
 
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
+// API可以在一个router中注册一系列的endpoints并且用提供的存储和查询引擎处理它们
 type API struct {
 	Queryable   storage.Queryable
 	QueryEngine *promql.Engine
@@ -204,8 +210,10 @@ func (api *API) Register(r *route.Router) {
 			httputil.SetCORS(w, api.CORSOrigin, r)
 			result := f(r)
 			if result.err != nil {
+				// 返回错误
 				api.respondError(w, result.err, result.data)
 			} else if result.data != nil {
+				// 将结果写入w
 				api.respond(w, result.data, result.warnings)
 			} else {
 				w.WriteHeader(http.StatusNoContent)
@@ -256,6 +264,7 @@ func (api *API) Register(r *route.Router) {
 
 }
 
+// 查询结果
 type queryData struct {
 	ResultType promql.ValueType  `json:"resultType"`
 	Result     promql.Value      `json:"result"`
@@ -268,6 +277,7 @@ func (api *API) options(r *http.Request) apiFuncResult {
 
 func (api *API) query(r *http.Request) apiFuncResult {
 	var ts time.Time
+	// 从请求体中获取时间
 	if t := r.FormValue("time"); t != "" {
 		var err error
 		ts, err = parseTime(t)
@@ -292,12 +302,14 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		defer cancel()
 	}
 
+	// 检测语句是否正常
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'query'")
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
+	// 获取查询结果
 	res := qry.Exec(ctx)
 	if res.Err != nil {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
@@ -309,6 +321,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 		qs = stats.NewQueryStats(qry.Stats())
 	}
 
+	// 返回查询结果
 	return apiFuncResult{&queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
@@ -1106,8 +1119,10 @@ func (api *API) respond(w http.ResponseWriter, data interface{}, warnings storag
 		return
 	}
 
+	// 设置Content-Type为application/json
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	// 写入body
 	if n, err := w.Write(b); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
@@ -1128,6 +1143,7 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 	}
 
 	var code int
+	// 根据错误的类型设置状态码
 	switch apiErr.typ {
 	case errorBadData:
 		code = http.StatusBadRequest

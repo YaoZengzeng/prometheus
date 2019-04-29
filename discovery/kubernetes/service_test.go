@@ -95,6 +95,7 @@ func makeExternalService() *v1.Service {
 }
 
 func TestServiceDiscoveryAdd(t *testing.T) {
+	// 创建discovery
 	n, c := makeDiscovery(RoleService, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
@@ -172,6 +173,7 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 		expectedRes: map[string]*targetgroup.Group{
 			"svc/default/testservice": {
 				Targets: []model.LabelSet{
+					// Targets中包含的是target不同的label
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",
 						"__address__":                          "testservice.default.svc:30900",
@@ -185,6 +187,7 @@ func TestServiceDiscoveryUpdate(t *testing.T) {
 						"__meta_kubernetes_service_port_name":  "testport1",
 					},
 				},
+				// Labels包含的是各个Targets相同的label
 				Labels: model.LabelSet{
 					"__meta_kubernetes_service_name":                              "testservice",
 					"__meta_kubernetes_namespace":                                 "default",

@@ -38,6 +38,7 @@ func WithParam(ctx context.Context, p, v string) context.Context {
 
 // Router wraps httprouter.Router and adds support for prefixed sub-routers,
 // per-request context injections and instrumentation.
+// Router封装了httprouter.Router并且增加对于前缀sub-routers的支持
 type Router struct {
 	rtr    *httprouter.Router
 	prefix string

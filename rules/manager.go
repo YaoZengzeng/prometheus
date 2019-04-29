@@ -155,11 +155,13 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 }
 
 // QueryFunc processes PromQL queries.
+// QueryFunc处理PromQL queries
 type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, error)
 
 // EngineQueryFunc returns a new query function that executes instant queries against
 // the given engine.
 // It converts scalar into vector results.
+// EngineQueryFunc返回一个新的query函数，对给定的engine执行即时查询
 func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 		q, err := engine.NewInstantQuery(q, qs, t)

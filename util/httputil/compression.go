@@ -80,6 +80,8 @@ func newCompressedResponseWriter(writer http.ResponseWriter, req *http.Request) 
 
 // CompressionHandler is a wrapper around http.Handler which adds suitable
 // response compression based on the client's Accept-Encoding headers.
+// CompressionHanlder是http.Handler的封装，它会基于客户端的Accept-Encoding headers增加
+// 合适的response compression
 type CompressionHandler struct {
 	Handler http.Handler
 }

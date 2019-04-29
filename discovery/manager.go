@@ -85,16 +85,22 @@ func init() {
 // Discoverer provides information about target groups. It maintains a set
 // of sources from which TargetGroups can originate. Whenever a discovery provider
 // detects a potential change, it sends the TargetGroup through its channel.
+// Discoverer提供关于target groups的信息，它维护了一系列能够产生TargetGroups的源
+// 当一个discovery provider检测到一个潜在的change，它就会通过channel发送TargetGroup
 //
 // Discoverer does not know if an actual change happened.
 // It does guarantee that it sends the new TargetGroup whenever a change happens.
+// Discoverer不知道是否真的发生了改变，但是它确保在change发生的时候发送新的TargetGroup
 //
 // Discoverers should initially send a full set of all discoverable TargetGroups.
+// Discoverers应该在初始的时候发送一系列可发现的TargetGroups
 type Discoverer interface {
 	// Run hands a channel to the discovery provider (Consul, DNS etc) through which it can send
 	// updated target groups.
+	// Run提供一个channel给discovery provider（Consul, DNS等），通过它能够发送更新的target groups
 	// Must returns if the context gets canceled. It should not close the update
 	// channel on returning.
+	// 必须返回如果context被取消了，在返回的时候不应该关闭update channel
 	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
 
@@ -104,6 +110,7 @@ type poolKey struct {
 }
 
 // provider holds a Discoverer instance, its configuration and its subscribers.
+// provider维护了一个Discoverer实例，它的配置以及subscribers
 type provider struct {
 	name   string
 	d      Discoverer
@@ -142,6 +149,8 @@ func Name(n string) func(*Manager) {
 
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
+// Manager维护了一系列的discovery providers并且将每个更新发送到一个map channel
+// Targets根据target set name被聚合
 type Manager struct {
 	logger         log.Logger
 	name           string
@@ -151,10 +160,13 @@ type Manager struct {
 
 	// Some Discoverers(eg. k8s) send only the updates for a given target group
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
+	// 例如k8s的Discoverers只发送给定的target group的updates
+	// 因此我们使用map[tg.Source]*targetgroup.Group来知道更新哪个group
 	targets map[poolKey]map[string]*targetgroup.Group
 	// providers keeps track of SD providers.
 	providers []*provider
 	// The sync channel sends the updates as a map where the key is the job value from the scrape config.
+	// sync channel将更新作为一个map发送，其中key是scrape config中的job value
 	syncCh chan map[string][]*targetgroup.Group
 
 	// How long to wait before sending updates to the channel. The variable
@@ -162,6 +174,7 @@ type Manager struct {
 	updatert time.Duration
 
 	// The triggerSend channel signals to the manager that new updates have been received from providers.
+	// The triggerSend channel用于通知manager，从providers收到了新的updates
 	triggerSend chan struct{}
 }
 
@@ -181,6 +194,7 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
+// ApplyConfig移除所有正在运行的discovery providers并且用提供的config启动一个新的
 func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -192,6 +206,7 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	}
 	m.cancelDiscoverers()
 	for name, scfg := range cfg {
+		// 注册providers
 		m.registerProviders(scfg, name)
 		discoveredTargets.WithLabelValues(m.name, name).Set(0)
 	}
@@ -256,6 +271,7 @@ func (m *Manager) sender() {
 		select {
 		case <-m.ctx.Done():
 			return
+		// 有的discoverers发送更新太频繁，因此我们用ticker来限流
 		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
@@ -329,6 +345,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			}
 		}
 
+		// 创建新的discoverer
 		d, err := newDiscoverer()
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", t)
@@ -424,6 +441,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 }
 
 // StaticProvider holds a list of target groups that never change.
+// StaticProvider维护一系列不会改变的target groups
 type StaticProvider struct {
 	TargetGroups []*targetgroup.Group
 }

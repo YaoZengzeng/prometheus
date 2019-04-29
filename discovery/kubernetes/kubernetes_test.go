@@ -29,6 +29,7 @@ import (
 )
 
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
+// makeDiscovery创建一个kubernetes.Discovery实例用于测试
 func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
 	clientset := fake.NewSimpleClientset(objects...)
 

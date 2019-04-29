@@ -61,6 +61,7 @@ var (
 )
 
 // Role is role of the service in Kubernetes.
+// Role是Kubernetes中service的角色
 type Role string
 
 // The valid options for Role.
@@ -86,6 +87,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // SDConfig is the configuration for Kubernetes service discovery.
+// SDConfig是Kubernetes服务发现的配置
 type SDConfig struct {
 	APIServer          config_util.URL              `yaml:"api_server,omitempty"`
 	Role               Role                         `yaml:"role"`
@@ -116,6 +118,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // NamespaceDiscovery is the configuration for discovering
 // Kubernetes namespaces.
+// NamespaceDiscovery是用于发现Kubernetes namespaces的配置
 type NamespaceDiscovery struct {
 	Names []string `yaml:"names"`
 }
@@ -168,12 +171,14 @@ type Discovery struct {
 func (d *Discovery) getNamespaces() []string {
 	namespaces := d.namespaceDiscovery.Names
 	if len(namespaces) == 0 {
+		// 不指定namespaces，则直接返回NamespaceAll
 		namespaces = []string{apiv1.NamespaceAll}
 	}
 	return namespaces
 }
 
 // New creates a new Kubernetes discovery for the given role.
+// New为给定的role创建一个新的Kubernetes discovery
 func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -185,6 +190,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	if conf.APIServer.URL == nil {
 		// Use the Kubernetes provided pod service account
 		// as described in https://kubernetes.io/docs/admin/service-accounts-admin/
+		// 使用Kubernetes提供的pod service account
 		kcfg, err = rest.InClusterConfig()
 		if err != nil {
 			return nil, err
@@ -203,6 +209,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 
 	kcfg.UserAgent = "Prometheus/discovery"
 
+	// 创建kubernetes client
 	c, err := kubernetes.NewForConfig(kcfg)
 	if err != nil {
 		return nil, err
@@ -219,6 +226,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 const resyncPeriod = 10 * time.Minute
 
 // Run implements the discoverer interface.
+// Run实现了discoverer接口
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	d.Lock()
 	namespaces := d.getNamespaces()
@@ -283,6 +291,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go pod.informer.Run(ctx.Done())
 		}
 	case RoleService:
+		// 当监听的是service
 		for _, namespace := range namespaces {
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
@@ -297,6 +306,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				log.With(d.logger, "role", "service"),
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 			)
+			// 将svc加入到d.discoverers中
 			d.discoverers = append(d.discoverers, svc)
 			go svc.informer.Run(ctx.Done())
 		}

@@ -312,11 +312,14 @@ func DefaultKubernetesUserAgent() string {
 // kubernetes gives to pods. It's intended for clients that expect to be
 // running inside a pod running on kubernetes. It will return ErrNotInCluster
 // if called from a process not running in a kubernetes environment.
+// InClusterConfig返回一个config object，它使用kubernetes给pods的service account
+// 它用于运行在kubernetes中的pod的clients
 func InClusterConfig() (*Config, error) {
 	const (
 		tokenFile  = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 		rootCAFile = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 	)
+	// 获取kubernetes这个service的host和port
 	host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
 	if len(host) == 0 || len(port) == 0 {
 		return nil, ErrNotInCluster

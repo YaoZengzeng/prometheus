@@ -233,6 +233,7 @@ func (clientGoCacheMetricsProvider) NewLastResourceVersionMetric(name string) ca
 }
 
 // Definition of client-go workqueue metrics provider definition
+// client-go workqueue metrics provider的定义
 type clientGoWorkqueueMetricsProvider struct{}
 
 func (f *clientGoWorkqueueMetricsProvider) Register(registerer prometheus.Registerer) {

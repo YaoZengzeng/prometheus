@@ -46,6 +46,7 @@ var (
 )
 
 // SDConfig is the configuration for file based discovery.
+// SDConfig是基于文件的服务发现的配置，仅仅只是文件的路径和更新的时间间隔
 type SDConfig struct {
 	Files           []string       `yaml:"files"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`

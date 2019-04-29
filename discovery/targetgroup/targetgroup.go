@@ -21,14 +21,19 @@ import (
 )
 
 // Group is a set of targets with a common label set(production , test, staging etc.).
+// Group是一系列有着共同label set的targets
 type Group struct {
 	// Targets is a list of targets identified by a label set. Each target is
 	// uniquely identifiable in the group by its address label.
+	// Targets是一系列用label set识别的targets
+	// 每一个target都能用它的address label被唯一的识别
 	Targets []model.LabelSet
 	// Labels is a set of labels that is common across all targets in the group.
+	// Labels是group中的所有targets都相同的labels
 	Labels model.LabelSet
 
 	// Source is an identifier that describes a group of targets.
+	// Source是描述一系列targets的标识符
 	Source string
 }
 

@@ -31,6 +31,7 @@ import (
 )
 
 // Service implements discovery of Kubernetes services.
+// Service实现了对于Kubernetes services的发现
 type Service struct {
 	logger   log.Logger
 	informer cache.SharedInformer
@@ -39,6 +40,7 @@ type Service struct {
 }
 
 // NewService returns a new service discovery.
+// NewService返回一个新的service discovery
 func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -71,6 +73,7 @@ func (s *Service) enqueue(obj interface{}) {
 }
 
 // Run implements the Discoverer interface.
+// Run实现了Discovery接口
 func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer s.queue.ShutDown()
 
@@ -85,6 +88,7 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}()
 
 	// Block until the target provider is explicitly canceled.
+	// 阻塞直到target provider被显式地取消
 	<-ctx.Done()
 }
 

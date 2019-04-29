@@ -95,6 +95,8 @@ import (
 // It's backed by a very simple object tracker that processes creates, updates and deletions as-is,
 // without applying any validations and/or defaults. It shouldn't be considered a replacement
 // for a real clientset and is mostly useful in simple unit tests.
+// NewSimpleClientset返回一个clientset，它会用给定的objects进行回复
+// 它背后是一个非常简单的object tracker，用于处理创建，更新和删除，不会施加任何的validations
 func NewSimpleClientset(objects ...runtime.Object) *Clientset {
 	o := testing.NewObjectTracker(scheme, codecs.UniversalDecoder())
 	for _, obj := range objects {

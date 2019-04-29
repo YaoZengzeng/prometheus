@@ -33,11 +33,13 @@ import (
 )
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
+// TestTargetUpdatesOrder用于检测以期望的顺序获取target updates
 func TestTargetUpdatesOrder(t *testing.T) {
 
 	// The order by which the updates are send is determined by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
 	// For example discoverer "A" with targets "t2,t3" and discoverer "B" with targets "t1,t2" will result in "t2,t3,t1,t2" after the merge.
+	// updates的顺序是由传送给mock discovery adapter的interval决定的
 	testCases := []struct {
 		title           string
 		updates         map[string][]update
@@ -48,6 +50,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			updates: map[string][]update{
 				"tp1": {},
 			},
+			// []update为空，获取的expectedTargets为空
 			expectedTargets: nil,
 		},
 		{
@@ -667,6 +670,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			var totalUpdatesCount int
 			provUpdates := make(chan []*targetgroup.Group)
 			for _, up := range tc.updates {
+				// 运行newMockDiscoveryProvider
 				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
 				if len(up) > 0 {
 					totalUpdatesCount = totalUpdatesCount + len(up)
@@ -679,7 +683,9 @@ func TestTargetUpdatesOrder(t *testing.T) {
 				case <-ctx.Done():
 					t.Errorf("%d: no update arrived within the timeout limit", x)
 					break Loop
+				// 从provUpdates获取更新
 				case tgs := <-provUpdates:
+					// 用获取的target group更新discoveryManager
 					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
 					for _, got := range discoveryManager.allGroups() {
 						assertEqualGroups(t, got, tc.expectedTargets[x], func(got, expected string) string {
@@ -1119,6 +1125,7 @@ type mockdiscoveryProvider struct {
 }
 
 func newMockDiscoveryProvider(updates ...update) mockdiscoveryProvider {
+	// mockdiscoveryProvider仅仅是对updates的一个封装
 	tp := mockdiscoveryProvider{
 		updates: updates,
 	}
@@ -1126,6 +1133,7 @@ func newMockDiscoveryProvider(updates ...update) mockdiscoveryProvider {
 }
 
 func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgroup.Group) {
+	// 遍历tp.updates，每次等待u.interval秒
 	for _, u := range tp.updates {
 		if u.interval > 0 {
 			t := time.NewTicker(u.interval)
@@ -1140,6 +1148,7 @@ func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgr
 				}
 			}
 		}
+		// 创建tgs并发送
 		tgs := make([]*targetgroup.Group, len(u.targetGroups))
 		for i := range u.targetGroups {
 			tgs[i] = &u.targetGroups[i]

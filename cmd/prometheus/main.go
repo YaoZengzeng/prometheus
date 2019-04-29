@@ -72,6 +72,7 @@ var (
 		Help: "Timestamp of the last successful configuration reload.",
 	})
 
+	// 默认的最长保留时间是15天
 	defaultRetentionString   = "15d"
 	defaultRetentionDuration model.Duration
 )
@@ -97,6 +98,9 @@ func main() {
 		newFlagRetentionDuration model.Duration
 	)
 
+	// 将server的命令行参数写入cfg中
+	// 命令行参数仅仅用于简单的配置，Server不重启就不会更新
+	// 任何在配置文件中的配置都必须支持在不重启Server的条件下重载
 	cfg := struct {
 		configFile string
 
@@ -334,16 +338,21 @@ func main() {
 		ctxWeb, cancelWeb = context.WithCancel(context.Background())
 		ctxRule           = context.Background()
 
+		// 创建notifierManager
 		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
+		// 创建scrape的discovery manager
 		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
 
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
+		// 创建notify的discovery manager
 		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
 
+		// 创建scrapte manager
 		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
 
+		// 创建promql engine
 		opts = promql.EngineOpts{
 			Logger:        log.With(logger, "component", "query engine"),
 			Reg:           prometheus.DefaultRegisterer,
@@ -353,6 +362,7 @@ func main() {
 		}
 		queryEngine = promql.NewEngine(opts)
 
+		// 创建rule manager
 		ruleManager = rules.NewManager(&rules.ManagerOptions{
 			Appendable:      fanoutStorage,
 			TSDB:            localStorage,
@@ -411,6 +421,8 @@ func main() {
 		webHandler.ApplyConfig,
 		// The Scrape and notifier managers need to reload before the Discovery manager as
 		// they need to read the most updated config when receiving the new targets list.
+		// Scrape和Notifier Managers需要在Discovery Manager之前reload
+		// 因为在接收新的targets list的时候需要读取最新的config
 		scrapeManager.ApplyConfig,
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
@@ -452,6 +464,7 @@ func main() {
 
 	// Start all components while we wait for TSDB to open but only load
 	// initial config and mark ourselves as ready after it completed.
+	// 当我们在等待TSDB时启动所有的组件，但是只加载初始配置，并且在它完成之后将我们自己标记为ready
 	dbOpen := make(chan struct{})
 
 	// sync.Once is used to make sure we can close the channel at different execution stages(SIGTERM or when the config is loaded).
@@ -461,6 +474,7 @@ func main() {
 		Close func()
 	}
 	// Wait until the server is ready to handle reloading.
+	// 等待直到server已经准备好处理reloading
 	reloadReady := &closeOnce{
 		C: make(chan struct{}),
 	}
@@ -470,6 +484,7 @@ func main() {
 		})
 	}
 
+	// group.Group将所有组件连接在一起，共同协调启动和关闭
 	var g group.Group
 	{
 		// Termination handler.
@@ -533,6 +548,8 @@ func main() {
 				// it needs to read a valid config for each job.
 				// It depends on the config being in sync with the discovery manager so
 				// we wait until the config is fully loaded.
+				// 当scrape manager收到一个新的targets list
+				// 它需要为每一个job读取一个合法的config
 				<-reloadReady.C
 
 				err := scrapeManager.Run(discoveryManagerScrape.SyncCh())
@@ -587,6 +604,7 @@ func main() {
 	}
 	{
 		// Initial configuration loading.
+		// 初始化配置的加载
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
@@ -637,6 +655,7 @@ func main() {
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {
+				// 启动TSDB
 				level.Info(logger).Log("msg", "Starting TSDB ...")
 				if cfg.tsdb.WALSegmentSize != 0 {
 					if cfg.tsdb.WALSegmentSize < 10*1024*1024 || cfg.tsdb.WALSegmentSize > 256*1024*1024 {
@@ -696,12 +715,15 @@ func main() {
 
 		// Calling notifier.Stop() before ruleManager.Stop() will cause a panic if the ruleManager isn't running,
 		// so keep this interrupt after the ruleManager.Stop().
+		// 如果ruleManager不在运行，则在ruleManager.Stop()之前调用notifier.Stop()会导致panic，
+		// 所以保持interrupt直到ruleManager.Stop()
 		g.Add(
 			func() error {
 				// When the notifier manager receives a new targets list
 				// it needs to read a valid config for each job.
 				// It depends on the config being in sync with the discovery manager
 				// so we wait until the config is fully loaded.
+				// 当notifier manager接收到一个新的targets list，它需要为每个job读取一个合法的config
 				<-reloadReady.C
 
 				notifierManager.Run(discoveryManagerNotify.SyncCh())

@@ -35,6 +35,7 @@ var ErrNotReady = errors.New("TSDB not ready")
 
 // ReadyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
+// ReadyStorage实现了Storage接口，从而在之后设置真正的storage
 type ReadyStorage struct {
 	mtx sync.RWMutex
 	a   *adapter

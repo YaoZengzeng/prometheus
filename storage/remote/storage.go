@@ -33,6 +33,8 @@ type startTimeCallback func() (int64, error)
 
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
+// Storage代表了所有的remote read和write的endpoints
+// 它实现了storage.Storage接口
 type Storage struct {
 	logger log.Logger
 	mtx    sync.Mutex

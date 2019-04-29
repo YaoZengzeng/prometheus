@@ -8,6 +8,9 @@ package group
 // Group collects actors (functions) and runs them concurrently.
 // When one actor (function) returns, all actors are interrupted.
 // The zero value of a Group is useful.
+// Group收集actors并且并发地运行它们
+// 当一个actor返回，所有的actors都被中断
+// 一个Group的零值是有用的
 type Group struct {
 	actors []actor
 }
@@ -15,9 +18,12 @@ type Group struct {
 // Add an actor (function) to the group. Each actor must be pre-emptable by an
 // interrupt function. That is, if interrupt is invoked, execute should return.
 // Also, it must be safe to call interrupt even after execute has returned.
+// Add向group增加一个actor，每个actor必须有一个interrupt function，这意味着如果发生了interrupt
+// 执行需要返回，同时即使execute已经返回，调用interrupt也必须是安全的
 //
 // The first actor (function) to return interrupts all running actors.
 // The error is passed to the interrupt functions, and is returned by Run.
+// 第一个actor的返回会中断所有正在运行的actors
 func (g *Group) Add(execute func() error, interrupt func(error)) {
 	g.actors = append(g.actors, actor{execute, interrupt})
 }

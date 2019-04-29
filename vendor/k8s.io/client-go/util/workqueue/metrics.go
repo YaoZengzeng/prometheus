@@ -65,6 +65,7 @@ func (noopMetric) Set(float64)     {}
 func (noopMetric) Observe(float64) {}
 
 // defaultQueueMetrics expects the caller to lock before setting any metrics.
+// defaultQueueMetrics希望调用者在设置任何的metrics之前先lock
 type defaultQueueMetrics struct {
 	clock clock.Clock
 

@@ -31,6 +31,7 @@ import (
 )
 
 // ServiceDiscoveryConfig configures lists of different service discovery mechanisms.
+// ServiceDiscoveryConfig用于配置一系列不同的服务发现机制
 type ServiceDiscoveryConfig struct {
 	// List of labeled target groups for this job.
 	StaticConfigs []*targetgroup.Group `yaml:"static_configs,omitempty"`
