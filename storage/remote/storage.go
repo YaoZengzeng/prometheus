@@ -75,6 +75,7 @@ func (s *Storage) run() {
 }
 
 // ApplyConfig updates the state as the new config requires.
+// ApplyConfig根据新的config的要求更新状态
 func (s *Storage) ApplyConfig(conf *config.Config) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -83,6 +84,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	newQueues := []*QueueManager{}
 	// TODO: we should only stop & recreate queues which have changes,
 	// as this can be quite disruptive.
+	// 我们应该在只配置发生改变时，停止并且重建队列
 	for i, rwConf := range conf.RemoteWriteConfigs {
 		c, err := NewClient(i, &ClientConfig{
 			URL:              rwConf.URL,
@@ -114,6 +116,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	}
 
 	// Update read clients
+	// 更新read clients
 	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
 	for i, rrConf := range conf.RemoteReadConfigs {
 		c, err := NewClient(i, &ClientConfig{

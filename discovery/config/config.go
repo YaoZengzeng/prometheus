@@ -48,6 +48,7 @@ type ServiceDiscoveryConfig struct {
 	// MarathonSDConfigs is a list of Marathon service discovery configurations.
 	MarathonSDConfigs []*marathon.SDConfig `yaml:"marathon_sd_configs,omitempty"`
 	// List of Kubernetes service discovery configurations.
+	// 一系列Kubernetes服务发现相关的配置
 	KubernetesSDConfigs []*kubernetes.SDConfig `yaml:"kubernetes_sd_configs,omitempty"`
 	// List of GCE service discovery configurations.
 	GCESDConfigs []*gce.SDConfig `yaml:"gce_sd_configs,omitempty"`

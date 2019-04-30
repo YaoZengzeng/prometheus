@@ -3401,6 +3401,8 @@ const (
 	// ServiceTypeExternalName means a service consists of only a reference to
 	// an external name that kubedns or equivalent will return as a CNAME
 	// record, with no exposing or proxying of any pods involved.
+	// ServiceTypeExternalName意味着一个service仅由一个external name的引用构成，kubedns
+	// 或者类似的等价物能够返回一个CNAME record，但是不会暴露或者代理到任何的pods
 	ServiceTypeExternalName ServiceType = "ExternalName"
 )
 

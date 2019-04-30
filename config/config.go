@@ -129,6 +129,7 @@ var (
 )
 
 // Config is the top-level configuration for Prometheus's config files.
+// Config是Prometheus最上层的配置
 type Config struct {
 	GlobalConfig   GlobalConfig    `yaml:"global"`
 	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
@@ -280,14 +281,19 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // GlobalConfig configures values that are used across other configuration
 // objects.
+// GlobalConfig配置了在其他的configuration objects中会被使用的值
 type GlobalConfig struct {
 	// How frequently to scrape targets by default.
+	// 默认的抓取targets的时间间隔
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The default timeout when scraping targets.
+	// 抓取targets时默认的timeout
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
 	// How frequently to evaluate rules by default.
+	// 默认的评估规则的频率
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
+	// 本Prometheus实例抓取到timeseries之后会额外增加的labels
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
 }
 
@@ -341,20 +347,27 @@ func (c *GlobalConfig) isZero() bool {
 }
 
 // ScrapeConfig configures a scraping unit for Prometheus.
+// ScrapeConfig定义了Prometheus的一个抓取单元
 type ScrapeConfig struct {
 	// The job name to which the job label is set by default.
+	// job的名字，默认都会设置job label
 	JobName string `yaml:"job_name"`
 	// Indicator whether the scraped metrics should remain unmodified.
+	// 表示是否抓取到的metrics是否应该保持不被修改
 	HonorLabels bool `yaml:"honor_labels,omitempty"`
 	// Indicator whether the scraped timestamps should be respected.
+	// 表示是否应该保持抓取到的timestamps
 	HonorTimestamps bool `yaml:"honor_timestamps"`
 	// A set of query parameters with which the target is scraped.
+	// target被抓取时的一系列query parameters
 	Params url.Values `yaml:"params,omitempty"`
 	// How frequently to scrape the targets of this scrape config.
+	// 抓取targets的频率
 	ScrapeInterval model.Duration `yaml:"scrape_interval,omitempty"`
 	// The timeout for scraping targets of this config.
 	ScrapeTimeout model.Duration `yaml:"scrape_timeout,omitempty"`
 	// The HTTP resource path on which to fetch metrics from targets.
+	// 从targets抓取metrics时的HTTP资源路径
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
@@ -368,8 +381,10 @@ type ScrapeConfig struct {
 	HTTPClientConfig       config_util.HTTPClientConfig     `yaml:",inline"`
 
 	// List of target relabel configurations.
+	// 一系列的target relabel配置
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.
+	// 一系列的metric relabel配置
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
 }
 
@@ -522,6 +537,7 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 }
 
 // CheckTargetAddress checks if target address is valid.
+// CheckTargetAddress检查target address是否合法
 func CheckTargetAddress(address model.LabelValue) error {
 	// For now check for a URL, we may want to expand this later.
 	if strings.Contains(string(address), "/") {
@@ -543,6 +559,7 @@ type FileSDConfig struct {
 }
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
+// RemoteWriteConfig是写入远程存储的配置
 type RemoteWriteConfig struct {
 	URL                 *config_util.URL  `yaml:"url"`
 	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`

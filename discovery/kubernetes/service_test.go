@@ -101,6 +101,7 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
+			// 创建一个Service和External Service
 			obj := makeService()
 			c.CoreV1().Services(obj.Namespace).Create(obj)
 			obj = makeExternalService()
@@ -109,6 +110,7 @@ func TestServiceDiscoveryAdd(t *testing.T) {
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
 			"svc/default/testservice": {
+				// 一个service可能包含多个端口可访问，因此Targets是service的各个端口
 				Targets: []model.LabelSet{
 					{
 						"__meta_kubernetes_service_port_protocol": "TCP",

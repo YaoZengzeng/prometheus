@@ -48,6 +48,7 @@ func NewService(l log.Logger, inf cache.SharedInformer) *Service {
 	s := &Service{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("ingress")}
 	s.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
+			// 将事件加入到队列中
 			eventCount.WithLabelValues("service", "add").Inc()
 			s.enqueue(o)
 		},
@@ -93,6 +94,7 @@ func (s *Service) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 }
 
 func (s *Service) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool {
+	// 从队列中获取数据
 	keyObj, quit := s.queue.Get()
 	if quit {
 		return false
@@ -139,6 +141,7 @@ func serviceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
+	// metaLabelPrefix为"__meta_kubernetes_"
 	serviceNameLabel               = metaLabelPrefix + "service_name"
 	serviceLabelPrefix             = metaLabelPrefix + "service_label_"
 	serviceLabelPresentPrefix      = metaLabelPrefix + "service_labelpresent_"
@@ -151,6 +154,7 @@ const (
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {
+	// label的数目为len(svc.Labels) + len(svc.Annotations) + 2
 	ls := make(model.LabelSet, len(svc.Labels)+len(svc.Annotations)+2)
 
 	ls[serviceNameLabel] = lv(svc.Name)
@@ -170,13 +174,16 @@ func serviceLabels(svc *apiv1.Service) model.LabelSet {
 	return ls
 }
 
+// 从kubernetes的Service转换到targetgroup.Group
 func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 	tg := &targetgroup.Group{
+		// Source的格式一般为"svc/$namespace/$name"
 		Source: serviceSource(svc),
 	}
 	tg.Labels = serviceLabels(svc)
 
 	for _, port := range svc.Spec.Ports {
+		// service的地址为ServiceName.ServiceNamespace.svc:port
 		addr := net.JoinHostPort(svc.Name+"."+svc.Namespace+".svc", strconv.FormatInt(int64(port.Port), 10))
 
 		labelSet := model.LabelSet{
@@ -191,6 +198,7 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 			labelSet[serviceClusterIPLabel] = lv(svc.Spec.ClusterIP)
 		}
 
+		// 将每个port相关的数据加入Targets
 		tg.Targets = append(tg.Targets, labelSet)
 	}
 

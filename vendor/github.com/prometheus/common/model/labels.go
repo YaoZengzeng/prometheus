@@ -39,25 +39,33 @@ const (
 
 	// AddressLabel is the name of the label that holds the address of
 	// a scrape target.
+	// AddressLabel是用于保存scrape target的地址的label
 	AddressLabel = "__address__"
 
 	// MetricsPathLabel is the name of the label that holds the path on which to
 	// scrape a target.
+	// MetricsPathLabel代表用于scrape一个target的路径的label
 	MetricsPathLabel = "__metrics_path__"
 
 	// ReservedLabelPrefix is a prefix which is not legal in user-supplied
 	// label names.
+	// ReservedLabelPrefix是那些不能提供给用户的label names的前缀
 	ReservedLabelPrefix = "__"
 
 	// MetaLabelPrefix is a prefix for labels that provide meta information.
 	// Labels with this prefix are used for intermediate label processing and
 	// will not be attached to time series.
+	// MetaLabelPrefix会作为那些提供元数据信息的labels的前缀
+	// 有着这些前缀的Labels用于中间的label处理并且最后不会添加到time series中
 	MetaLabelPrefix = "__meta_"
 
 	// TmpLabelPrefix is a prefix for temporary labels as part of relabelling.
 	// Labels with this prefix are used for intermediate label processing and
 	// will not be attached to time series. This is reserved for use in
 	// Prometheus configuration files by users.
+	// TmpLabelPrefix是在relabelling过程中的临时labels
+	// 有着这个前缀的Labels用于中间的label处理并且不会添加到time series中
+	// 这是为用户在Prometheus configuration中使用预留的
 	TmpLabelPrefix = "__tmp_"
 
 	// ParamLabelPrefix is a prefix for labels that provide URL parameters
@@ -69,6 +77,7 @@ const (
 	JobLabel = "job"
 
 	// InstanceLabel is the label name used for the instance label.
+	// InstanceLabel是instance label的名字
 	InstanceLabel = "instance"
 
 	// BucketLabel is used for the label that defines the upper bound of a

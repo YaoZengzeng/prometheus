@@ -94,6 +94,7 @@ type writeTo interface {
 }
 
 // WALWatcher watches the TSDB WAL for a given WriteTo.
+// WALWatcher为给定的WriteTo监听TSDB WAL
 type WALWatcher struct {
 	name           string
 	writer         writeTo
@@ -116,6 +117,7 @@ type WALWatcher struct {
 }
 
 // NewWALWatcher creates a new WAL watcher for a given WriteTo.
+// NewWALWatcher为给定的WriteTo创建一个新的WAL watcher
 func NewWALWatcher(logger log.Logger, name string, writer writeTo, walDir string) *WALWatcher {
 	if logger == nil {
 		logger = log.NewNopLogger()

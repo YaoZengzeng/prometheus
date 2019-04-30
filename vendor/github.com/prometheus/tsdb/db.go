@@ -54,6 +54,7 @@ var DefaultOptions = &Options{
 }
 
 // Options of the DB storage.
+// DB storage的选项
 type Options struct {
 	// Segments (wal files) max size.
 	// WALSegmentSize = 0, segment size is default size.

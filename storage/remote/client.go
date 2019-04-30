@@ -38,7 +38,9 @@ const maxErrMsgLen = 256
 var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
+// Client允许读写一个远程的HTTP endpoint
 type Client struct {
+	// index用于在metrics中区分clients
 	index   int // Used to differentiate clients in metrics.
 	url     *config_util.URL
 	client  *http.Client
@@ -53,6 +55,7 @@ type ClientConfig struct {
 }
 
 // NewClient creates a new Client.
+// NewClient创建一个新的Client
 func NewClient(index int, conf *ClientConfig) (*Client, error) {
 	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage")
 	if err != nil {

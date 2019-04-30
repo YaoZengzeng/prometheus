@@ -40,6 +40,8 @@ import (
 const (
 	// kubernetesMetaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
+	// kubernetesMetaLabelPrefix是用于discovery中所有的meta labels的prefix
+	// metaLabelPrefix为"__meta_kubernetes_"
 	metaLabelPrefix  = model.MetaLabelPrefix + "kubernetes_"
 	namespaceLabel   = metaLabelPrefix + "namespace"
 	metricsNamespace = "prometheus_sd_kubernetes"
@@ -229,6 +231,7 @@ const resyncPeriod = 10 * time.Minute
 // Run实现了discoverer接口
 func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	d.Lock()
+	// 获取namespace
 	namespaces := d.getNamespaces()
 
 	switch d.role {
@@ -293,6 +296,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	case RoleService:
 		// 当监听的是service
 		for _, namespace := range namespaces {
+			// 对相应的service进行list & watch
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {

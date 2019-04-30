@@ -36,9 +36,11 @@ type Storage interface {
 	Queryable
 
 	// StartTime returns the oldest timestamp stored in the storage.
+	// StartTime返回在storage中存储的最老的timestamp
 	StartTime() (int64, error)
 
 	// Appender returns a new appender against the storage.
+	// Appender返回storage的一个新的appender
 	Appender() (Appender, error)
 
 	// Close closes the storage and all its underlying resources.
@@ -50,6 +52,7 @@ type Storage interface {
 // Queryable处理对于一个storage的queries
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
+	// Querier返回storage的一个新的Querier
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 

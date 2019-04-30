@@ -71,9 +71,11 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // Config is the configuration for relabeling of target label sets.
+// Config是用于relabeling target的label sets的配置
 type Config struct {
 	// A list of labels from which values are taken and concatenated
 	// with the configured separator in order.
+	// 一系列的labels，获取他们的values并且按序用默认的separator进行连接
 	SourceLabels model.LabelNames `yaml:"source_labels,flow,omitempty"`
 	// Separator is the string between concatenated values from the source labels.
 	Separator string `yaml:"separator,omitempty"`
@@ -83,6 +85,7 @@ type Config struct {
 	Modulus uint64 `yaml:"modulus,omitempty"`
 	// TargetLabel is the label to which the resulting string is written in a replacement.
 	// Regexp interpolation is allowed for the replace action.
+	// TargetLabel是在replacement中resulting string需要写入的label
 	TargetLabel string `yaml:"target_label,omitempty"`
 	// Replacement is the regex replacement pattern to be used.
 	Replacement string `yaml:"replacement,omitempty"`
@@ -180,6 +183,9 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 // are applied in order of input.
 // If a label set is dropped, nil is returned.
 // May return the input labelSet modified.
+// Process返回给定label set的一个relabeled copy，relabel configurations按照输入的顺序被应用
+// 如果一个label set被丢弃，则返回nil
+// 可能会返回一个经过修改的labelSet
 func Process(labels labels.Labels, cfgs ...*Config) labels.Labels {
 	for _, cfg := range cfgs {
 		labels = relabel(labels, cfg)
@@ -195,6 +201,7 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 	for _, ln := range cfg.SourceLabels {
 		values = append(values, lset.Get(string(ln)))
 	}
+	// 将SourceLabels进行连接
 	val := strings.Join(values, cfg.Separator)
 
 	lb := labels.NewBuilder(lset)
@@ -224,11 +231,13 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 			lb.Del(cfg.TargetLabel)
 			break
 		}
+		// 设置target为res
 		lb.Set(string(target), string(res))
 	case HashMod:
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))
 	case LabelMap:
+		// 对于LabelMap，遍历lset，然后将l.Name用正则表达式进行替换
 		for _, l := range lset {
 			if cfg.Regex.MatchString(l.Name) {
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
@@ -236,12 +245,14 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 			}
 		}
 	case LabelDrop:
+		// 丢弃匹配正则表达式的label
 		for _, l := range lset {
 			if cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)
 			}
 		}
 	case LabelKeep:
+		// 保留匹配正则表达式的label
 		for _, l := range lset {
 			if !cfg.Regex.MatchString(l.Name) {
 				lb.Del(l.Name)

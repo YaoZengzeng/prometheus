@@ -277,6 +277,7 @@ func Compare(a, b Labels) int {
 }
 
 // Builder allows modifying Labels.
+// Builder允许修改Labels
 type Builder struct {
 	base Labels
 	del  []string
@@ -284,6 +285,7 @@ type Builder struct {
 }
 
 // NewBuilder returns a new LabelsBuilder
+// NewBuilder返回一个新的LabelsBuilder
 func NewBuilder(base Labels) *Builder {
 	return &Builder{
 		base: base,
@@ -320,6 +322,7 @@ func (b *Builder) Set(n, v string) *Builder {
 
 // Labels returns the labels from the builder. If no modifications
 // were made, the original labels are returned.
+// Labels从builder返回labels，如果没有做修改，则返回原始的labels
 func (b *Builder) Labels() Labels {
 	if len(b.del) == 0 && len(b.add) == 0 {
 		return b.base

@@ -157,6 +157,8 @@ type StorageClient interface {
 // QueueManager manages a queue of samples to be sent to the Storage
 // indicated by the provided StorageClient. Implements writeTo interface
 // used by WAL Watcher.
+// QueueManager管理这一个队列的samples，他们会将被发送给StorageClient对应的Storage
+// 实现了WAL Watcher需要使用的writeTo接口
 type QueueManager struct {
 	logger         log.Logger
 	flushDeadline  time.Duration
@@ -306,6 +308,7 @@ outer:
 
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
+// Start启动queue manager，发送samples到远程的storage，不要阻塞
 func (t *QueueManager) Start() {
 	t.shards.start(t.numShards)
 	t.watcher.Start()
@@ -317,6 +320,7 @@ func (t *QueueManager) Start() {
 
 // Stop stops sending samples to the remote storage and waits for pending
 // sends to complete.
+// Stop停止发送samples到远程存储，等待pending sends终止
 func (t *QueueManager) Stop() {
 	level.Info(t.logger).Log("msg", "Stopping remote storage...")
 	defer level.Info(t.logger).Log("msg", "Remote storage stopped.")
@@ -326,6 +330,8 @@ func (t *QueueManager) Stop() {
 	// Wait for all QueueManager routines to end before stopping shards and WAL watcher. This
 	// is to ensure we don't end up executing a reshard and shards.stop() at the same time, which
 	// causes a closed channel panic.
+	// 在停止shards和WAL watcher之前，等待所有的QueueManager routines结束
+	// 这用于确保防止结束时同时执行reshard和shards.stop()，这回导致一个closed channel panic
 	t.shards.stop()
 	t.watcher.Stop()
 

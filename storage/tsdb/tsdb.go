@@ -102,6 +102,7 @@ func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
 }
 
 // adapter implements a storage.Storage around TSDB.
+// adapter实现了TSDB的storage.Storage接口
 type adapter struct {
 	db              *tsdb.DB
 	startTimeMargin int64
@@ -111,18 +112,23 @@ type adapter struct {
 type Options struct {
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
+	// head blocks进行持久化存储的最小时间间隔
 	MinBlockDuration model.Duration
 
 	// The maximum timestamp range of compacted blocks.
+	// compacted blocks的最大timestamp范围
 	MaxBlockDuration model.Duration
 
 	// The maximum size of each WAL segment file.
+	// 每个WAL segement file的最大大小
 	WALSegmentSize units.Base2Bytes
 
 	// Duration for how long to retain data.
+	// 数据保存的期限
 	RetentionDuration model.Duration
 
 	// Maximum number of bytes to be retained.
+	// 数据保存的最大字节数
 	MaxBytes units.Base2Bytes
 
 	// Disable creation and consideration of lockfile.
@@ -130,6 +136,8 @@ type Options struct {
 
 	// When true it disables the overlapping blocks check.
 	// This in-turn enables vertical compaction and vertical query merge.
+	// 如果为true，它会禁止overlapping blocks check
+	// 它反过来会使能vertical compaction和vertical query merge
 	AllowOverlappingBlocks bool
 }
 
@@ -143,6 +151,7 @@ func registerMetrics(db *tsdb.DB, r prometheus.Registerer) {
 
 	startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_lowest_timestamp_seconds",
+		// 在数据库中存储的最小的timestamp
 		Help: "Lowest timestamp value stored in the database.",
 	}, func() float64 {
 		bb := db.Blocks()
@@ -153,12 +162,14 @@ func registerMetrics(db *tsdb.DB, r prometheus.Registerer) {
 	})
 	headMinTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_min_time_seconds",
+		// head block最小的time bound
 		Help: "Minimum time bound of the head block.",
 	}, func() float64 {
 		return float64(db.Head().MinTime()) / 1000
 	})
 	headMaxTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_max_time_seconds",
+		// head block最小的timestamp
 		Help: "Maximum timestamp of the head block.",
 	}, func() float64 {
 		return float64(db.Head().MaxTime()) / 1000
@@ -174,12 +185,14 @@ func registerMetrics(db *tsdb.DB, r prometheus.Registerer) {
 }
 
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
+// Open返回一个为Prometheus配置的基于TSDB数据库的新的storage
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
 	// Start with smallest block duration and create exponential buckets until the exceed the
 	// configured maximum block duration.
+	// 以最小的block duration启动并且创建指数级的buckets直到超过配置的最大的block duration
 	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 10, 3)
 
 	for i, v := range rngs {
@@ -189,6 +202,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 		}
 	}
 
+	// 打开数据库
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALSegmentSize:         int(opts.WALSegmentSize),
 		RetentionDuration:      uint64(time.Duration(opts.RetentionDuration).Seconds() * 1000),

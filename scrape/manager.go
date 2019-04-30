@@ -55,11 +55,14 @@ func NewManager(logger log.Logger, app Appendable) *Manager {
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
 // when receiving new target groups form the discovery manager.
+// Manager维护了一系列的scrape pools并且管理从discovery manager收到新的target groups
+// 时的start/stop cycles
 type Manager struct {
 	logger    log.Logger
 	append    Appendable
 	graceShut chan struct{}
 
+	// 全局的jitterSeed seed用于在设置了HA的时候分布scrape workload
 	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.
 	mtxScrape     sync.Mutex // Guards the fields below.
 	scrapeConfigs map[string]*config.ScrapeConfig
@@ -71,6 +74,8 @@ type Manager struct {
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
 // Reloading happens in the background so that it doesn't block receiving targets updates.
+// Run接收并且保存target set的更新并且触发scraping loops的重新加载
+// Reloading在后台发生因此并不会阻塞targets updates
 func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 	go m.reloader()
 	for {
@@ -79,6 +84,7 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 			m.updateTsets(ts)
 
 			select {
+			// target set更新，触发reload
 			case m.triggerReload <- struct{}{}:
 			default:
 			}
@@ -112,12 +118,14 @@ func (m *Manager) reload() {
 	m.mtxScrape.Lock()
 	var wg sync.WaitGroup
 	for setName, groups := range m.targetSets {
+		// 如果targetSets在scrapePools中不存在对应的scrapePool，则创建之
 		if _, ok := m.scrapePools[setName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
+			// 新建ScrapePool
 			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName))
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
@@ -128,6 +136,7 @@ func (m *Manager) reload() {
 
 		wg.Add(1)
 		// Run the sync in parallel as these take a while and at high load can't catch up.
+		// 同步地运行sync
 		go func(sp *scrapePool, groups []*targetgroup.Group) {
 			sp.Sync(groups)
 			wg.Done()
@@ -170,6 +179,7 @@ func (m *Manager) updateTsets(tsets map[string][]*targetgroup.Group) {
 }
 
 // ApplyConfig resets the manager's target providers and job configurations as defined by the new cfg.
+// ApplyConfig根据新的cfg重置了manager的target providers和job configurations
 func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()
@@ -185,7 +195,9 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	}
 
 	// Cleanup and reload pool if the configuration has changed.
+	// 清除或者重载pool，如果configuration发生改变的话
 	var failed bool
+	// 遍历pools，如果pool不存在则停止并删除,如果配置发生改变的话，则重载
 	for name, sp := range m.scrapePools {
 		if cfg, ok := m.scrapeConfigs[name]; !ok {
 			sp.stop()

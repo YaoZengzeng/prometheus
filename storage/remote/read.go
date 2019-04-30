@@ -37,6 +37,7 @@ func init() {
 
 // QueryableClient returns a storage.Queryable which queries the given
 // Client to select series sets.
+// QueryableClient返回一个storage.Queryable，它请求给定的Client用于获取series sets
 func QueryableClient(c *Client) storage.Queryable {
 	remoteReadQueries.WithLabelValues(c.Name())
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -50,6 +51,7 @@ func QueryableClient(c *Client) storage.Queryable {
 }
 
 // querier is an adapter to make a Client usable as a storage.Querier.
+// querier是一个adapter用于将一个Client作为一个storage.Querier使用
 type querier struct {
 	ctx        context.Context
 	mint, maxt int64
@@ -107,6 +109,7 @@ func ExternalLabelsHandler(next storage.Queryable, externalLabels labels.Labels)
 
 // externalLabelsQuerier is a querier which ensures that Select() results match
 // the configured external labels.
+// externalLabelsQuerier是一个querier，它保证Select()的结果匹配configured external labels
 type externalLabelsQuerier struct {
 	storage.Querier
 

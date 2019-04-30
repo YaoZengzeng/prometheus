@@ -43,14 +43,17 @@ func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime
 
 type k8sDiscoveryTest struct {
 	// discovery is instance of discovery.Discoverer
+	// discovery是discovery.Discoverer的一个实例
 	discovery discoverer
 	// beforeRun runs before discoverer run
 	beforeRun func()
 	// afterStart runs after discoverer has synced
 	afterStart func()
 	// expectedMaxItems is expected max items we may get from channel
+	// expectedMaxItems是我们期望从channel中获取的最大的items数目
 	expectedMaxItems int
 	// expectedRes is expected final result
+	// expectedRes是期望的最后的结果
 	expectedRes map[string]*targetgroup.Group
 }
 
@@ -65,6 +68,7 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	}
 
 	// Run discoverer and start a goroutine to read results.
+	// 运行discoverer并且启动一个goroutine用于读取结果
 	go d.discovery.Run(ctx, ch)
 	resChan := make(chan map[string]*targetgroup.Group)
 	go readResultWithTimeout(t, ch, d.expectedMaxItems, time.Second, resChan)
@@ -91,6 +95,8 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 
 // readResultWithTimeout reads all targegroups from channel with timeout.
 // It merges targegroups by source and sends the result to result channel.
+// readResultWithTimeout从channel中读取所有的targetgroups并且有超时
+// 它整合来自source的targetgroups并且发送结果到result channel
 func readResultWithTimeout(t *testing.T, ch <-chan []*targetgroup.Group, max int, timeout time.Duration, resChan chan<- map[string]*targetgroup.Group) {
 	allTgs := make([][]*targetgroup.Group, 0)
 
@@ -113,6 +119,7 @@ Loop:
 	}
 
 	// Merge by source and sent it to channel.
+	// 根据source进行聚合并且发送到channel
 	res := make(map[string]*targetgroup.Group)
 	for _, tgs := range allTgs {
 		for _, tg := range tgs {
@@ -125,6 +132,7 @@ Loop:
 	resChan <- res
 }
 
+// 将expected和res进行json，判断两者是否相等
 func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Group) {
 	t.Helper()
 	b1, err := json.Marshal(expected)

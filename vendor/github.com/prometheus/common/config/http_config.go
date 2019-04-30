@@ -72,14 +72,17 @@ func (u URL) MarshalYAML() (interface{}, error) {
 }
 
 // HTTPClientConfig configures an HTTP client.
+// HTTPClientConfig用于配置一个HTTP client
 type HTTPClientConfig struct {
 	// The HTTP basic authentication credentials for the targets.
+	// 对于targets的HTTP基本身份验证凭据
 	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty"`
 	// The bearer token for the targets.
 	BearerToken Secret `yaml:"bearer_token,omitempty"`
 	// The bearer token file for the targets.
 	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
 	// HTTP proxy server to use to connect to the targets.
+	// 用于连接targets的HTTP proxy server
 	ProxyURL URL `yaml:"proxy_url,omitempty"`
 	// TLSConfig to use to connect to the targets.
 	TLSConfig TLSConfig `yaml:"tls_config,omitempty"`
@@ -122,6 +125,8 @@ func newClient(rt http.RoundTripper) *http.Client {
 
 // NewClientFromConfig returns a new HTTP client configured for the
 // given config.HTTPClientConfig. The name is used as go-conntrack metric label.
+// NewClientFromConfig返回一个新的HTTP client，用给定的config.HTTPClientConfig进行配置
+// name作为go-conntrack metric label被使用
 func NewClientFromConfig(cfg HTTPClientConfig, name string) (*http.Client, error) {
 	rt, err := NewRoundTripperFromConfig(cfg, name)
 	if err != nil {

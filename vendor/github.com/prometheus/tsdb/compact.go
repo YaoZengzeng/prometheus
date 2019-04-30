@@ -38,6 +38,7 @@ import (
 )
 
 // ExponentialBlockRanges returns the time ranges based on the stepSize.
+// ExponentialBlockRanges基于stepSize返回time ranges
 func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 	ranges := make([]int64, 0, steps)
 	curRange := minSize
