@@ -637,6 +637,7 @@ func main() {
 	{
 		// Rule manager.
 		// TODO(krasi) refactor ruleManager.Run() to be blocking to avoid using an extra blocking channel.
+		// 重构ruleManager.Run()用于阻塞，避免使用一个额外的blocking channel
 		cancel := make(chan struct{})
 		g.Add(
 			func() error {

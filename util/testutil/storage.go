@@ -25,6 +25,7 @@ import (
 
 // NewStorage returns a new storage for testing purposes
 // that removes all associated files on closing.
+// NewStorage返回一个新的storage用于测试，它会在关闭的时候移除所有的相关文件
 func NewStorage(t T) storage.Storage {
 	dir, err := ioutil.TempDir("", "test_storage")
 	if err != nil {
@@ -33,6 +34,7 @@ func NewStorage(t T) storage.Storage {
 
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
+	// 测试只会顺序加载一组时序数据，因此我们需要一个长的appendable window
 	db, err := tsdb.Open(dir, nil, nil, &tsdb.Options{
 		MinBlockDuration: model.Duration(24 * time.Hour),
 		MaxBlockDuration: model.Duration(24 * time.Hour),

@@ -42,15 +42,18 @@ func TestMetrics(t *testing.T) {
 	testutil.Ok(t, headMaxTime.Write(metrics))
 	testutil.Equals(t, float64(model.Earliest)/1000, metrics.Gauge.GetValue())
 
+	// 获取Appender，增加时序数据
 	app, err := db.Appender()
 	testutil.Ok(t, err)
 
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1, 1)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2, 1)
 	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 3, 1)
+	// 调用app.Commit()
 	testutil.Ok(t, app.Commit())
 
 	// Check after adding some samples.
+	// 在增加一些samples之后进行检查
 	testutil.Ok(t, startTime.Write(metrics))
 	testutil.Equals(t, 0.001, metrics.Gauge.GetValue())
 

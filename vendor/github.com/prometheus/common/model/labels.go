@@ -31,6 +31,7 @@ const (
 
 	// MetricNameLabel is the label name indicating the metric name of a
 	// timeseries.
+	// MetricNameLabel是一个label的名字用于表示这个时序的metric name
 	MetricNameLabel = "__name__"
 
 	// SchemeLabel is the name of the label that holds the scheme on which to

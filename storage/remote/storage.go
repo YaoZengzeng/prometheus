@@ -40,12 +40,14 @@ type Storage struct {
 	mtx    sync.Mutex
 
 	// For writes
+	// 用于写
 	walDir        string
 	queues        []*QueueManager
 	samplesIn     *ewmaRate
 	flushDeadline time.Duration
 
 	// For reads
+	// 用于读
 	queryables             []storage.Queryable
 	localStartTimeCallback startTimeCallback
 }

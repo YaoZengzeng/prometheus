@@ -97,6 +97,7 @@ func (s *ReadyStorage) Close() error {
 }
 
 // Adapter return an adapter as storage.Storage.
+// Adapter返回一个adapter作为storage.Storage
 func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
 	return &adapter{db: db, startTimeMargin: startTimeMargin}
 }
@@ -242,6 +243,7 @@ func (a adapter) Querier(_ context.Context, mint, maxt int64) (storage.Querier, 
 }
 
 // Appender returns a new appender against the storage.
+// Appender返回一个新的appender用于存储
 func (a adapter) Appender() (storage.Appender, error) {
 	return appender{a: a.db.Appender()}, nil
 }

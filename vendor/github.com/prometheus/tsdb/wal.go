@@ -105,12 +105,14 @@ type WALReader interface {
 }
 
 // RefSeries is the series labels with the series ID.
+// RefSeries是和series ID相关的series labels
 type RefSeries struct {
 	Ref    uint64
 	Labels labels.Labels
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
+// RefSample是一个timestamp/value对，和一个series的引用相关联
 type RefSample struct {
 	Ref uint64
 	T   int64

@@ -48,6 +48,7 @@ func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Stora
 func (f *fanout) StartTime() (int64, error) {
 	// StartTime of a fanout should be the earliest StartTime of all its storages,
 	// both primary and secondaries.
+	// fanout的StartTime应该是它底下所有的storages中最早的StartTime
 	firstTime, err := f.primary.StartTime()
 	if err != nil {
 		return int64(model.Latest), err
@@ -69,6 +70,7 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	queriers := make([]Querier, 0, 1+len(f.secondaries))
 
 	// Add primary querier
+	// 增加primary querier
 	primaryQuerier, err := f.primary.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
@@ -76,9 +78,11 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	queriers = append(queriers, primaryQuerier)
 
 	// Add secondary queriers
+	// 增加secondary queriers
 	for _, storage := range f.secondaries {
 		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
+			// 遇到错误，则创建一个MergeQuerier并且关闭
 			NewMergeQuerier(primaryQuerier, queriers).Close()
 			return nil, err
 		}
@@ -110,6 +114,7 @@ func (f *fanout) Appender() (Appender, error) {
 }
 
 // Close closes the storage and all its underlying resources.
+// Close关闭storage以及所有的底层资源
 func (f *fanout) Close() error {
 	if err := f.primary.Close(); err != nil {
 		return err
@@ -152,6 +157,7 @@ func (f *fanoutAppender) AddFast(l labels.Labels, ref uint64, t int64, v float64
 		return err
 	}
 
+	// 对于f.secondaries直接调用Add方法
 	for _, appender := range f.secondaries {
 		if _, err := appender.Add(l, t, v); err != nil {
 			return err
@@ -167,7 +173,9 @@ func (f *fanoutAppender) Commit() (err error) {
 		if err == nil {
 			err = appender.Commit()
 		} else {
+			// 如果上一次commit有问题，则调用appender.Rollback()
 			if rollbackErr := appender.Rollback(); rollbackErr != nil {
+				// 如果Rollback报错，则打log
 				level.Error(f.logger).Log("msg", "Squashed rollback error on commit", "err", rollbackErr)
 			}
 		}
@@ -176,6 +184,8 @@ func (f *fanoutAppender) Commit() (err error) {
 }
 
 func (f *fanoutAppender) Rollback() (err error) {
+	// fanoutAppender的Rollback()先调用f.primary.Rollback()
+	// 再调用f.secondaries的Rollback()
 	err = f.primary.Rollback()
 
 	for _, appender := range f.secondaries {
@@ -202,6 +212,9 @@ type mergeQuerier struct {
 // NB NewMergeQuerier will return NoopQuerier if no queriers are passed to it,
 // and will filter NoopQueriers from its arguments, in order to reduce overhead
 // when only one querier is passed.
+// NewMergeQuerier返回一个新的Querier，它会合并所有input queriers的结果
+// NB NewMergeQuerier会返回NoopQuerier如果没有queriers传递给他，并且会从参数中过滤
+// NoopQueriers，为了减少overhead
 func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 	filtered := make([]Querier, 0, len(queriers))
 	for _, querier := range queriers {
@@ -229,6 +242,7 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 }
 
 // Select returns a set of series that matches the given label matchers.
+// Select返回一系列匹配给定label的matchers
 func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	var warnings Warnings

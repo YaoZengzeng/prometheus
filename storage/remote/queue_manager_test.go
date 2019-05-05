@@ -46,6 +46,7 @@ const defaultFlushDeadline = 1 * time.Minute
 func TestSampleDelivery(t *testing.T) {
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
+	// 创建一个偶数的send batches，这样我们就不会进入batch timeout的情况
 	n := config.DefaultQueueConfig.Capacity * 2
 	samples, series := createTimeseries(n)
 
@@ -262,11 +263,13 @@ func createTimeseries(n int) ([]tsdb.RefSample, []tsdb.RefSeries) {
 	series := make([]tsdb.RefSeries, 0, n)
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
+		// samples是某个metric的采样值
 		samples = append(samples, tsdb.RefSample{
 			Ref: uint64(i),
 			T:   int64(i),
 			V:   float64(i),
 		})
+		// series用于代表某个metric
 		series = append(series, tsdb.RefSeries{
 			Ref:    uint64(i),
 			Labels: tsdbLabels.Labels{{Name: "__name__", Value: name}},
@@ -306,6 +309,7 @@ func (c *TestStorageClient) expectSamples(ss []tsdb.RefSample, series []tsdb.Ref
 	c.receivedSamples = map[string][]prompb.Sample{}
 
 	for _, s := range ss {
+		// 获取相应的series Name，并且存放到expectedSamples中
 		seriesName := getSeriesNameFromRef(series[s.Ref])
 		c.expectedSamples[seriesName] = append(c.expectedSamples[seriesName], prompb.Sample{
 			Timestamp: s.T,
@@ -350,6 +354,7 @@ func (c *TestStorageClient) Store(_ context.Context, req []byte) error {
 		}
 		for _, sample := range ts.Samples {
 			count++
+			// 写入receivedSamples中
 			c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], sample)
 		}
 	}

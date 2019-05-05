@@ -39,6 +39,7 @@ const (
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
+// Chunk保存了一个序列的sample pairs，它能被遍历以及被添加
 type Chunk interface {
 	Bytes() []byte
 	Encoding() Encoding

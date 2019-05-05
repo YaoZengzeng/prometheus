@@ -39,9 +39,11 @@ import (
 )
 
 // RuleHealth describes the health state of a target.
+// RuleHealth描述了一个rule的健康状态
 type RuleHealth string
 
 // The possible health states of a rule based on the last execution.
+// 基于上次执行情况的rule的可能的健康状况
 const (
 	HealthUnknown RuleHealth = "unknown"
 	HealthGood    RuleHealth = "ok"
@@ -75,6 +77,7 @@ type Metrics struct {
 
 // NewGroupMetrics makes a new Metrics and registers them with then provided registerer,
 // if not nil.
+// NewGroupMetrics新建一个Metrics并且用提供的registerer进行注册，如果它们不为nil的话
 func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 	m := &Metrics{
 		evalDuration: prometheus.NewSummary(
@@ -188,6 +191,8 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 
 // A Rule encapsulates a vector expression which is evaluated at a specified
 // interval and acted upon (currently either recorded or used for alerting).
+// 一个Rule封装了一个vector expression，它会在特定的时间间隔被触发，当前情况下，或者进行record
+// 或者用于alerting
 type Rule interface {
 	Name() string
 	// Labels of the rule.
@@ -218,6 +223,7 @@ type Rule interface {
 }
 
 // Group is a set of rules that have a logical relation.
+// Group是一系列有着逻辑关系的rules
 type Group struct {
 	name                 string
 	file                 string
@@ -240,6 +246,7 @@ type Group struct {
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
+// NewGroup用给定的name, options以及rules创建一个新的Group
 func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRestore bool, opts *ManagerOptions) *Group {
 	metrics := opts.Metrics
 	if metrics == nil {
@@ -283,6 +290,7 @@ func (g *Group) run(ctx context.Context) {
 	// Wait an initial amount to have consistently slotted intervals.
 	evalTimestamp := g.evalTimestamp().Add(g.interval)
 	select {
+	// 等待evalTimestamp + g.interval
 	case <-time.After(time.Until(evalTimestamp)):
 	case <-g.done:
 		return
@@ -292,6 +300,7 @@ func (g *Group) run(ctx context.Context) {
 		g.metrics.iterationsScheduled.Inc()
 
 		start := time.Now()
+		// 进行计算
 		g.Eval(ctx, evalTimestamp)
 		timeSinceStart := time.Since(start)
 
@@ -452,6 +461,7 @@ func (g *Group) CopyState(from *Group) {
 }
 
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
+// Eval运行一个evaluation cycle，其中每一个rule都会顺序地执行一遍
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	for i, rule := range g.rules {
 		select {
@@ -474,6 +484,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.evalTotal.Inc()
 
+			// 进行evaluation
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
@@ -486,6 +497,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 
 			if ar, ok := rule.(*AlertingRule); ok {
+				// 发送alerts
 				ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.interval, g.opts.NotifyFunc)
 			}
 			var (
@@ -500,6 +512,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
+			// 将evalution获取的metric通过appender进行存储
 			for _, s := range vector {
 				if _, err := app.Add(s.Metric, s.T, s.V); err != nil {
 					switch err {
@@ -526,6 +539,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
+					// 不再暴露的Series，将其标记为stale
 					_, err = app.Add(lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 					switch err {
 					case nil:
@@ -675,6 +689,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 }
 
 // The Manager manages recording and alerting rules.
+// Manager管理recording并且alerting rules
 type Manager struct {
 	opts     *ManagerOptions
 	groups   map[string]*Group
@@ -686,6 +701,7 @@ type Manager struct {
 }
 
 // Appendable returns an Appender.
+// Appendable返回一个Appender
 type Appendable interface {
 	Appender() (storage.Appender, error)
 }
@@ -712,6 +728,7 @@ type ManagerOptions struct {
 
 // NewManager returns an implementation of Manager, ready to be started
 // by calling the Run method.
+// NewManager返回Manager的一个实现，调用Run方法准备启动
 func NewManager(o *ManagerOptions) *Manager {
 	if o.Metrics == nil {
 		o.Metrics = NewGroupMetrics(o.Registerer)
@@ -733,11 +750,13 @@ func NewManager(o *ManagerOptions) *Manager {
 }
 
 // Run starts processing of the rule manager.
+// Run启动rule manager的处理
 func (m *Manager) Run() {
 	close(m.block)
 }
 
 // Stop the rule manager's rule evaluation cycles.
+// Stop停止rule manager的rule evaluation cycles
 func (m *Manager) Stop() {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -753,6 +772,7 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
+// 当config需要的话，更新rule manager的状态，如果加载新的rules失败了，老的rule会被重新加载
 func (m *Manager) Update(interval time.Duration, files []string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -773,12 +793,15 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
+		// 如果一个old group有着同样的identifier，停止它并且等待它完成当前的迭代
+		// 之后将它拷贝到新的group
 		gn := groupKey(newg.name, newg.file)
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
 
 		go func(newg *Group) {
 			if ok {
+				// 停止老的group
 				oldg.stop()
 				newg.CopyState(oldg)
 			}
@@ -786,6 +809,8 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 				// Wait with starting evaluation until the rule manager
 				// is told to run. This is necessary to avoid running
 				// queries against a bootstrapping storage.
+				// 等待starting evaluation直到rule manager被允许运行
+				// 这对于避免针对bootstrapping storage运行queries是必须的
 				<-m.block
 				newg.run(m.opts.Context)
 			}()
@@ -794,6 +819,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	}
 
 	// Stop remaining old groups.
+	// 停止剩余的老的groups
 	for _, oldg := range m.groups {
 		oldg.stop()
 	}
@@ -805,6 +831,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 }
 
 // LoadGroups reads groups from a list of files.
+// LoadGroups从一系列的文件中读取groups
 func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -830,6 +857,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 				}
 
 				if r.Alert != "" {
+					// 如果Alert字段不为空，则构建alerting rule
 					rules = append(rules, NewAlertingRule(
 						r.Alert,
 						expr,
@@ -841,6 +869,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 					))
 					continue
 				}
+				// 如果Alert字段为空，则构建recording rule
 				rules = append(rules, NewRecordingRule(
 					r.Record,
 					expr,
@@ -895,6 +924,7 @@ func (m *Manager) Rules() []Rule {
 }
 
 // AlertingRules returns the list of the manager's alerting rules.
+// AlertingRules返回一系列manager的alerting rules
 func (m *Manager) AlertingRules() []*AlertingRule {
 	m.mtx.RLock()
 	defer m.mtx.RUnlock()

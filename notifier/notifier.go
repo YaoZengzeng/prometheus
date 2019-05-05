@@ -59,12 +59,16 @@ const (
 var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Alert is a generic representation of an alert in the Prometheus eco-system.
+// Alert是一个alert在Prometheus的生态环境中的通用表示
 type Alert struct {
 	// Label value pairs for purpose of aggregation, matching, and disposition
 	// dispatching. This must minimally include an "alertname" label.
+	// Label value pairs用于聚合，匹配以及disposition dispatching
+	// 它必须至少包含一个"alertname"的label
 	Labels labels.Labels `json:"labels"`
 
 	// Extra key/value information which does not define alert identity.
+	// 额外的键值信息，不会定义alert identity
 	Annotations labels.Labels `json:"annotations"`
 
 	// The known time range for this alert. Both ends are optional.
@@ -107,6 +111,7 @@ func (a *Alert) ResolvedAt(ts time.Time) bool {
 
 // Manager is responsible for dispatching alert notifications to an
 // alert manager service.
+// Manager负责将alert notifications分发给一个alert manager service
 type Manager struct {
 	queue []*Alert
 	opts  *Options
@@ -261,6 +266,7 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	amSets := make(map[string]*alertmanagerSet)
 
 	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
+		// 根据config创建Alertmanager Set
 		ams, err := newAlertmanagerSet(cfg, n.logger)
 		if err != nil {
 			return err
@@ -269,6 +275,7 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 		ams.metrics = n.metrics
 
 		// The config hash is used for the map lookup identifier.
+		// config hash用于map lookup的标识符
 		b, err := json.Marshal(cfg)
 		if err != nil {
 			return err
@@ -290,6 +297,7 @@ func (n *Manager) queueLen() int {
 	return len(n.queue)
 }
 
+// 从manager中取出maxBatchSize个Alert，如果不足的话，取出全部
 func (n *Manager) nextBatch() []*Alert {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -547,6 +555,8 @@ func (a alertmanagerLabels) url() *url.URL {
 
 // alertmanagerSet contains a set of Alertmanagers discovered via a group of service
 // discovery definitions that have a common configuration on how alerts should be sent.
+// alertmanagerSet包含了一系列发现的Alertmanagers，通过一系列的service discovery的定义
+// 有着共同的定义，alerts应该如何发送
 type alertmanagerSet struct {
 	cfg    *config.AlertmanagerConfig
 	client *http.Client

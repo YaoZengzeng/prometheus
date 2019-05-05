@@ -68,18 +68,24 @@ type Querier interface {
 	LabelValues(name string) ([]string, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
+	// LabelNames按序返回当前block里面所有唯一的label names
 	LabelNames() ([]string, error)
 
 	// Close releases the resources of the Querier.
+	// Close释放Querier相关的资源
 	Close() error
 }
 
 // SelectParams specifies parameters passed to data selections.
+// SelectParams指定进行数据筛选的参数
 type SelectParams struct {
+	// 数据筛选的起始和截止时间，单位是毫秒
 	Start int64 // Start time in milliseconds for this select.
 	End   int64 // End time in milliseconds for this select.
 
+	// 以毫秒计的Query step size
 	Step int64  // Query step size in milliseconds.
+	// surrounding function或者aggregation的字符串表示
 	Func string // String representation of surrounding function or aggregation.
 }
 
@@ -107,6 +113,7 @@ type Appender interface {
 }
 
 // SeriesSet contains a set of series.
+// SeriesSet包含了一系列的series
 type SeriesSet interface {
 	Next() bool
 	At() Series
@@ -114,24 +121,32 @@ type SeriesSet interface {
 }
 
 // Series represents a single time series.
+// Series代表单个的time series
 type Series interface {
 	// Labels returns the complete set of labels identifying the series.
+	// Labels返回标识这个sereis的完整的labels
 	Labels() labels.Labels
 
 	// Iterator returns a new iterator of the data of the series.
+	// Iterator返回series相关数据的新的iterator
 	Iterator() SeriesIterator
 }
 
 // SeriesIterator iterates over the data of a time series.
+// SeriesIterator遍历一个time series的数据
 type SeriesIterator interface {
 	// Seek advances the iterator forward to the value at or after
 	// the given timestamp.
+	// Seek将iterator移动到给定的timestamp所在或者之后的值
 	Seek(t int64) bool
 	// At returns the current timestamp/value pair.
+	// Af返回当前的timestamp或者value对
 	At() (t int64, v float64)
 	// Next advances the iterator by one.
+	// Next将iterator加一
 	Next() bool
 	// Err returns the current error.
+	// Err返回当前的error
 	Err() error
 }
 

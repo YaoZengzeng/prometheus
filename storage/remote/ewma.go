@@ -20,6 +20,7 @@ import (
 )
 
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.
+// ewmaRate跟踪每秒速率的指数加权移动平均值
 type ewmaRate struct {
 	newEvents int64
 	alpha     float64

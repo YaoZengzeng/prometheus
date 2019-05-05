@@ -171,6 +171,7 @@ type QueueManager struct {
 	seriesMtx            sync.Mutex
 	seriesLabels         map[uint64][]prompb.Label
 	seriesSegmentIndexes map[uint64]int
+	// 经过relabel丢弃的series
 	droppedSeries        map[uint64]struct{}
 
 	shards      *shards
@@ -194,6 +195,7 @@ type QueueManager struct {
 }
 
 // NewQueueManager builds a new QueueManager.
+// NewQueueManager构建一个新的QueueManager
 func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg config.QueueConfig, externalLabels labels.Labels, relabelConfigs []*relabel.Config, client StorageClient, flushDeadline time.Duration) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -239,6 +241,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 	t.shards = t.newShards()
 
 	// Initialise some metrics.
+	// 初始化一些metrics
 	shardCapacity.WithLabelValues(name).Set(float64(t.cfg.Capacity))
 	t.pendingSamplesMetric.Set(0)
 
@@ -344,6 +347,7 @@ func (t *QueueManager) Stop() {
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
+// StoreSeries追踪那些我们知道的时序，用于将samples发送给远程时进行查询
 func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	temp := make(map[uint64][]prompb.Label, len(series))
 	for _, s := range series {
@@ -398,6 +402,8 @@ func release(ls []prompb.Label) {
 
 // processExternalLabels merges externalLabels into ls. If ls contains
 // a label in externalLabels, the value in ls wins.
+// processExternalLabels将externalLabels写入ls，如果有一个label在ls和externalLabels
+// 中都包含了，则以ls中的值为准
 func processExternalLabels(ls tsdbLabels.Labels, externalLabels labels.Labels) labels.Labels {
 	i, j, result := 0, 0, make(labels.Labels, 0, len(ls)+len(externalLabels))
 	for i < len(ls) && j < len(externalLabels) {
@@ -550,24 +556,31 @@ type shards struct {
 
 	// Emulate a wait group with a channel and an atomic int, as you
 	// cannot select on a wait group.
+	// 用一个channel和一个atomic int模拟一个wait group，因为我们不能再一个wait group
+	// 进行select
 	done    chan struct{}
 	running int32
 
 	// Soft shutdown context will prevent new enqueues and deadlocks.
+	// Soft shutdown context会防止新的入队以及死锁
 	softShutdown chan struct{}
 
 	// Hard shutdown context is used to terminate outgoing HTTP connections
 	// after giving them a chance to terminate.
+	// Hard shutdown context用于中止HTTP连接，在给他们机会中止之后
 	hardShutdown context.CancelFunc
 }
 
 // start the shards; must be called before any call to enqueue.
+// 启动shards，必须在调用任意的enqueue之前被调用
 func (s *shards) start(n int) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
+	// 创建n个chan prompb.TimeSeries
 	newQueues := make([]chan prompb.TimeSeries, n)
 	for i := 0; i < n; i++ {
+		// 默认s.qm.cfg.Capacity为100000
 		newQueues[i] = make(chan prompb.TimeSeries, s.qm.cfg.Capacity)
 	}
 
@@ -579,6 +592,7 @@ func (s *shards) start(n int) {
 	s.running = int32(n)
 	s.done = make(chan struct{})
 	for i := 0; i < n; i++ {
+		// 启动n个shard
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
 	s.qm.numShardsMetric.Set(float64(n))
@@ -647,9 +661,12 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline
 	// anyways.
+	// 将最多为MaxSamplesPerSend的samples发送给remote storage
+	// 如果我们的samples不足，则在deadline之后必须刷新它们
 	pendingSamples := []prompb.TimeSeries{}
 
 	max := s.qm.cfg.MaxSamplesPerSend
+	// 默认的BatchSendDeadline为5s
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
 		if !timer.Stop() {
@@ -668,6 +685,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 
 		case sample, ok := <-queue:
 			if !ok {
+				// 如果从队列中读取sample发生错误
 				if len(pendingSamples) > 0 {
 					level.Debug(s.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", len(pendingSamples))
 					s.sendSamples(ctx, pendingSamples)
@@ -680,6 +698,8 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 			// retries endlessly, so once we reach > 100 samples, if we can never send to the endpoint we'll
 			// stop reading from the queue (which has a size of 10).
+			// pending samples的数目被限制，因为sendSamples会不停地重试，因此一旦我们达到大于100个samples，如果我们不能
+			// 发送给endpoint，我们就会停止从队列中进行读取
 			pendingSamples = append(pendingSamples, sample)
 			s.qm.pendingSamplesMetric.Inc()
 
@@ -715,12 +735,15 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries) {
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
+	// 这些counters用来计算动态的sharding，无论失败或者成功都需要维护
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
+// sendSamples将samples发送到remote storage，对于可恢复的errors进行backoff
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries) error {
+	// 初始的回退时间是30ms，每次回退都会翻倍
 	backoff := s.qm.cfg.MinBackoff
 	req, highest, err := buildWriteRequest(samples)
 	if err != nil {
@@ -736,6 +759,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		default:
 		}
 		begin := time.Now()
+		// 调用qm的client.Store()方法存储请求
 		err := s.qm.client.Store(ctx, req)
 
 		s.qm.sentBatchDuration.Observe(time.Since(begin).Seconds())
@@ -754,6 +778,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 		time.Sleep(time.Duration(backoff))
 		backoff = backoff * 2
+		// 最长的backoff即为MaxBackOff，若超过则会回退到该值
 		if backoff > s.qm.cfg.MaxBackoff {
 			backoff = s.qm.cfg.MaxBackoff
 		}
@@ -764,6 +789,7 @@ func buildWriteRequest(samples []prompb.TimeSeries) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample in it.
+		// 记录最大的timestamp
 		if ts.Samples[0].Timestamp > highest {
 			highest = ts.Samples[0].Timestamp
 		}

@@ -1489,6 +1489,7 @@ func (s sample) V() float64 {
 
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
+// memSeries是series在内存中的表示，它的方法都不是goroutine safe的，它的调用者有责任进行锁定
 type memSeries struct {
 	sync.Mutex
 

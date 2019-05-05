@@ -190,6 +190,7 @@ func testTemplateParsing(rl *Rule) (errs []error) {
 }
 
 // Parse parses and validates a set of rules.
+// Parse解析并且检验一系列的rules
 func Parse(content []byte) (*RuleGroups, []error) {
 	var groups RuleGroups
 	if err := yaml.UnmarshalStrict(content, &groups); err != nil {
@@ -199,6 +200,7 @@ func Parse(content []byte) (*RuleGroups, []error) {
 }
 
 // ParseFile reads and parses rules from a file.
+// ParseFile从一个文件中读取并且解析rules
 func ParseFile(file string) (*RuleGroups, []error) {
 	b, err := ioutil.ReadFile(file)
 	if err != nil {

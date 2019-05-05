@@ -16,6 +16,8 @@ package prometheus
 // Collector is the interface implemented by anything that can be used by
 // Prometheus to collect metrics. A Collector has to be registered for
 // collection. See Registerer.Register.
+// Collector是任何实现了能够让Prometheus用于收集数据的对象，一个Collector必须先注册才能
+// 用于收集
 //
 // The stock metrics provided by this package (Gauge, Counter, Summary,
 // Histogram, Untyped) are also Collectors (which only ever collect one metric,

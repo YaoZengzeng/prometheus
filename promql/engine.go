@@ -216,6 +216,7 @@ type EngineOpts struct {
 
 // Engine handles the lifetime of queries from beginning to end.
 // It is connected to a querier.
+// Engine处理queries的整个生命周期，它和一个querier相连
 type Engine struct {
 	logger             log.Logger
 	metrics            *engineMetrics
@@ -235,12 +236,14 @@ func NewEngine(opts EngineOpts) *Engine {
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queries",
+			// 当前正在执行或者等待的queries的数目
 			Help:      "The current number of queries being executed or waiting.",
 		}),
 		maxConcurrentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "queries_concurrent_max",
+			// 并行的queries的数目
 			Help:      "The max number of concurrent queries.",
 		}),
 		queryQueueTime: prometheus.NewSummary(prometheus.SummaryOpts{

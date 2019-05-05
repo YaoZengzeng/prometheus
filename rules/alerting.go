@@ -39,13 +39,17 @@ import (
 
 const (
 	// AlertMetricName is the metric name for synthetic alert timeseries.
+	// AlertMetricName是合成的alert timeseries的metric name
 	alertMetricName = "ALERTS"
 	// AlertForStateMetricName is the metric name for 'for' state of alert.
+	// AlertForStateMetricName是'for' state of alert的metric name
 	alertForStateMetricName = "ALERTS_FOR_STATE"
 
 	// AlertNameLabel is the label name indicating the name of an alert.
+	// AlertNameLabel用于表示一个alert的名字的label name
 	alertNameLabel = "alertname"
 	// AlertStateLabel is the label name indicating the state of an alert.
+	// AlertStateLabel表示一个alert状态的label name
 	alertStateLabel = "alertstate"
 )
 
@@ -57,6 +61,7 @@ const (
 	StateInactive AlertState = iota
 	// StatePending is the state of an alert that has been active for less than
 	// the configured threshold duration.
+	// StatePending是指一个alert已经active但是还没有持续到指定的threshold duration的状态
 	StatePending
 	// StateFiring is the state of an alert that has been active for longer than
 	// the configured threshold duration.
@@ -107,6 +112,7 @@ func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
 }
 
 // An AlertingRule generates alerts from its vector expression.
+// AlertingRule从vector expression中产生alerts
 type AlertingRule struct {
 	// The name of the alert.
 	name string
@@ -114,6 +120,8 @@ type AlertingRule struct {
 	vector promql.Expr
 	// The duration for which a labelset needs to persist in the expression
 	// output vector before an alert transitions from Pending to Firing state.
+	// 在一个alert从Pending转换为Firing之前，labelset需要在expression output中需要维持
+	// 的状态
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
 	labels labels.Labels
@@ -134,12 +142,14 @@ type AlertingRule struct {
 	lastError error
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
+	// 当前活跃的（Pending或者Firing）的map of alerts
 	active map[uint64]*Alert
 
 	logger log.Logger
 }
 
 // NewAlertingRule constructs a new AlertingRule.
+// NewAlertingRule构建一个新的AlertingRule
 func NewAlertingRule(name string, vec promql.Expr, hold time.Duration, lbls, anns labels.Labels, restored bool, logger log.Logger) *AlertingRule {
 	return &AlertingRule{
 		name:         name,

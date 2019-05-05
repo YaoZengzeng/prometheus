@@ -123,10 +123,12 @@ func (c Client) Name() string {
 }
 
 // Read reads from a remote endpoint.
+// 从一个远程的endpoint读取
 func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
 	req := &prompb.ReadRequest{
 		// TODO: Support batching multiple queries into one read request,
 		// as the protobuf interface allows for it.
+		// 支持将多个queries合并为一个read request，因为这在protobuf的接口是允许的
 		Queries: []*prompb.Query{
 			query,
 		},

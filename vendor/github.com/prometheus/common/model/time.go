@@ -33,9 +33,11 @@ const (
 
 	// Earliest is the earliest Time representable. Handy for
 	// initializing a high watermark.
+	// Earliest是最早的可表示的Time，方便用于初始化high watermark
 	Earliest = Time(math.MinInt64)
 	// Latest is the latest Time representable. Handy for initializing
 	// a low watermark.
+	// Latest是能够表示的最晚的Time，方便用于初始化low watermark
 	Latest = Time(math.MaxInt64)
 )
 
