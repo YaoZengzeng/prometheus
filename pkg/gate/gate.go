@@ -16,12 +16,14 @@ package gate
 import "context"
 
 // A Gate controls the maximum number of concurrently running and waiting queries.
+// Gate用于控制最大并发数目的running和waiting的queries
 type Gate struct {
 	ch chan struct{}
 }
 
 // NewGate returns a query gate that limits the number of queries
 // being concurrently executed.
+// NewGate返回一个query gate，它用于限制在并发执行的queries的数目
 func New(length int) *Gate {
 	return &Gate{
 		ch: make(chan struct{}, length),
@@ -29,6 +31,7 @@ func New(length int) *Gate {
 }
 
 // Start blocks until the gate has a free spot or the context is done.
+// Start一直阻塞直到gate中有空闲的spot或者context已经结束
 func (g *Gate) Start(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
@@ -39,6 +42,7 @@ func (g *Gate) Start(ctx context.Context) error {
 }
 
 // Done releases a single spot in the gate.
+// Done释放gate中的一个spot
 func (g *Gate) Done() {
 	select {
 	case <-g.ch:

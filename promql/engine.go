@@ -134,21 +134,28 @@ type Query interface {
 }
 
 // query implements the Query interface.
+// query实现了Query接口
 type query struct {
 	// Underlying data provider.
+	// 底层的数据提供方
 	queryable storage.Queryable
 	// The original query string.
+	// 原始的查询字符串
 	q string
 	// Statement of the parsed query.
+	// 经过解析的查询的statement
 	stmt Statement
 	// Timer stats for the query execution.
+	// 查询执行的时间数据
 	stats *stats.QueryTimers
 	// Result matrix for reuse.
 	matrix Matrix
 	// Cancellation function for the query.
+	// query的Cancel函数
 	cancel func()
 
 	// The engine against which the query is executed.
+	// 查询执行的engine
 	ng *Engine
 }
 
@@ -165,6 +172,7 @@ func (q *query) Stats() *stats.QueryTimers {
 // Cancel implements the Query interface.
 func (q *query) Cancel() {
 	if q.cancel != nil {
+		// 如果q.cancel不为nil，则调用q.cancel()
 		q.cancel()
 	}
 }
@@ -177,16 +185,19 @@ func (q *query) Close() {
 }
 
 // Exec implements the Query interface.
+// Exec实现了Query接口
 func (q *query) Exec(ctx context.Context) *Result {
 	if span := opentracing.SpanFromContext(ctx); span != nil {
 		span.SetTag(queryTag, q.stmt.String())
 	}
 
+	// 调用执行engine的exec函数
 	res, warnings, err := q.ng.exec(ctx, q)
 	return &Result{Err: err, Value: res, Warnings: warnings}
 }
 
 // contextDone returns an error if the context was canceled or timed out.
+// contextDone返回error，如果context被取消或者超时
 func contextDone(ctx context.Context, env string) error {
 	if err := ctx.Err(); err != nil {
 		return contextErr(err, env)
@@ -196,8 +207,10 @@ func contextDone(ctx context.Context, env string) error {
 
 func contextErr(err error, env string) error {
 	switch err {
+	// 如果error的类型为context.Canceled，则返回ErrQueryCanceled(env)
 	case context.Canceled:
 		return ErrQueryCanceled(env)
+	// 如果error的类型为context.Canceled，则返回ErrQueryTimeout(env)
 	case context.DeadlineExceeded:
 		return ErrQueryTimeout(env)
 	default:
@@ -226,6 +239,7 @@ type Engine struct {
 }
 
 // NewEngine returns a new engine.
+// NewEngine返回一个新的engine
 func NewEngine(opts EngineOpts) *Engine {
 	if opts.Logger == nil {
 		opts.Logger = log.NewNopLogger()
@@ -299,10 +313,12 @@ func NewEngine(opts EngineOpts) *Engine {
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 // NewInstantQuery返回对于给定表达式在给定时间的查询结果
 func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (Query, error) {
+	// 首先对查询字符串进行解析
 	expr, err := ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
+	// 再调用engine的newQuery方法进行查询
 	qry := ng.newQuery(q, expr, ts, ts, 0)
 	qry.q = qs
 
@@ -326,12 +342,14 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, expr Expr, start, end time.Time, interval time.Duration) *query {
+	// 构建一个EvalStmt
 	es := &EvalStmt{
 		Expr:     expr,
 		Start:    start,
 		End:      end,
 		Interval: interval,
 	}
+	// 再基于EvalStmt构建一个query
 	qry := &query{
 		stmt:      es,
 		ng:        ng,
@@ -343,6 +361,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr Expr, start, end time.Time,
 
 // testStmt is an internal helper statement that allows execution
 // of an arbitrary function during handling. It is used to test the Engine.
+// testStmt是一个内部的帮助声明，它允许在处理期间执行任意的功能，它主要用于测试Engine
 type testStmt func(context.Context) error
 
 func (testStmt) String() string { return "test statement" }
@@ -359,14 +378,17 @@ func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 }
 
 // exec executes the query.
+// exec执行query
 //
 // At this point per query only one EvalStmt is evaluated. Alert and record
 // statements are not handled by the Engine.
+// 当前每个query只有一个EvalStmt会被执行，Alert和record语句不会由engine处理
 func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, error) {
 	ng.metrics.currentQueries.Inc()
 	defer ng.metrics.currentQueries.Dec()
 
 	ctx, cancel := context.WithTimeout(ctx, ng.timeout)
+	// 设置q.cancel为cancel
 	q.cancel = cancel
 
 	execSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.ExecTotalTime)
@@ -374,6 +396,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, 
 
 	queueSpanTimer, _ := q.stats.GetSpanTimer(ctx, stats.ExecQueueTime, ng.metrics.queryQueueTime)
 
+	// 启动gate，如果超过了规定的并行度，则会阻塞于此，不再执行
 	if err := ng.gate.Start(ctx); err != nil {
 		return nil, nil, contextErr(err, "query queue")
 	}
@@ -390,14 +413,17 @@ func (ng *Engine) exec(ctx context.Context, q *query) (Value, storage.Warnings, 
 	defer evalSpanTimer.Finish()
 
 	// The base context might already be canceled on the first iteration (e.g. during shutdown).
+	// 基础的context可能在第一次迭代的时候已经被取消了
 	if err := contextDone(ctx, env); err != nil {
 		return nil, nil, err
 	}
 
 	switch s := q.Statement().(type) {
 	case *EvalStmt:
+		// 如果类型为EvalStmt就执行
 		return ng.execEvalStmt(ctx, q, s)
 	case testStmt:
+		// 如果为testStmt就调用s本身
 		return nil, nil, s(ctx)
 	}
 
@@ -413,6 +439,7 @@ func durationMilliseconds(d time.Duration) int64 {
 }
 
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
+// execEvalStmt评估一个给定时间段的evaluation statement的表达式
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (Value, storage.Warnings, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
 	querier, warnings, err := ng.populateSeries(ctxPrepare, query.queryable, s)
@@ -431,6 +458,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
+	// 即时查询，它作为有着一个步长的range evaluation执行
 	if s.Start == s.End && s.Interval == 0 {
 		start := timeMilliseconds(s.Start)
 		evaluator := &evaluator{
@@ -454,6 +482,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 			panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 		}
 		query.matrix = mat
+		// 根据结果的类型返回
 		switch s.Expr.Type() {
 		case ValueTypeVector:
 			// Convert matrix with one value per series into vector.
@@ -475,6 +504,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	}
 
 	// Range evaluation.
+	// 区间查询
 	evaluator := &evaluator{
 		startTimestamp:      timeMilliseconds(s.Start),
 		endTimestamp:        timeMilliseconds(s.End),
@@ -669,6 +699,8 @@ func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.S
 // An evaluator evaluates given expressions over given fixed timestamps. It
 // is attached to an engine through which it connects to a querier and reports
 // errors. On timeout or cancellation of its context it terminates.
+// 一个evaluator评估给定timestamp的给定expressions，它和一个engine相连，通过它和一个querier
+// 相连并且报告errors，如果context超时或者取消，就终止
 type evaluator struct {
 	ctx context.Context
 
@@ -911,6 +943,7 @@ func (ev *evaluator) evalSubquery(subq *SubqueryExpr) *MatrixSelector {
 }
 
 // eval evaluates the given expression as the given AST expression node requires.
+// eval评估给定的表达式作为给定的AST表达式所需
 func (ev *evaluator) eval(expr Expr) Value {
 	// This is the top-level evaluation method.
 	// Thus, we check for timeout/cancellation here.

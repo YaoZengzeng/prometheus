@@ -56,6 +56,7 @@ func (t *Timer) String() string {
 }
 
 // A TimerGroup represents a group of timers relevant to a single query.
+// 一个TimerGroup代表和单个查询相关的一系列timers
 type TimerGroup struct {
 	timers map[fmt.Stringer]*Timer
 }

@@ -169,6 +169,7 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 }
 
 // Close the background processing of the storage queues.
+// 关闭对于storage queues的后台处理
 func (s *Storage) Close() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()

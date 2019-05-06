@@ -124,6 +124,7 @@ func TestHandlerSendAll(t *testing.T) {
 		defer r.Body.Close()
 
 		var alerts []*Alert
+		// 将请求的body解析到alerts中
 		testutil.Ok(t, json.NewDecoder(r.Body).Decode(&alerts))
 
 		testutil.Assert(t, alertsEqual(alerts, expected), "Unexpected alerts received %v exp %v", alerts, expected)
@@ -156,6 +157,7 @@ func TestHandlerSendAll(t *testing.T) {
 
 	h := NewManager(&Options{}, nil)
 
+	// 创建alert manager的client
 	authClient, _ := config_util.NewClientFromConfig(config_util.HTTPClientConfig{
 		BasicAuth: &config_util.BasicAuth{
 			Username: "prometheus",
@@ -241,9 +243,11 @@ func TestExternalLabels(t *testing.T) {
 		ExternalLabels: labels.Labels{{Name: "a", Value: "b"}},
 		RelabelConfigs: []*relabel.Config{
 			{
+				// 进行匹配的源label为"alertname"，修改的目标label为"a"
 				SourceLabels: model.LabelNames{"alertname"},
 				TargetLabel:  "a",
 				Action:       "replace",
+				// 匹配正则表达式externalrelabelthis
 				Regex:        relabel.MustNewRegexp("externalrelabelthis"),
 				Replacement:  "c",
 			},
@@ -251,12 +255,14 @@ func TestExternalLabels(t *testing.T) {
 	}, nil)
 
 	// This alert should get the external label attached.
+	// alert应该连上external label
 	h.Send(&Alert{
 		Labels: labels.FromStrings("alertname", "test"),
 	})
 
 	// This alert should get the external label attached, but then set to "c"
 	// through relabelling.
+	// 这个alert应该添加external label，同时通过relabelling，应该设置为"c"
 	h.Send(&Alert{
 		Labels: labels.FromStrings("alertname", "externalrelabelthis"),
 	})
@@ -312,7 +318,9 @@ func TestHandlerQueueing(t *testing.T) {
 		expected []*Alert
 	)
 
+	// 创建测试的http server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 当收到一个请求之后，就会向called
 		called <- struct{}{}
 		<-unblock
 
@@ -325,6 +333,7 @@ func TestHandlerQueueing(t *testing.T) {
 	}))
 
 	h := NewManager(&Options{
+		// queue的大小为3 * maxBatchSize
 		QueueCapacity: 3 * maxBatchSize,
 	},
 		nil,
@@ -359,6 +368,7 @@ func TestHandlerQueueing(t *testing.T) {
 
 	// If the batch is larger than the queue size, the front should be truncated
 	// from the front. Thus, we start at i=1.
+	// 如果batch比queue size更大，则batch从前开始截断，因此我们从i=1开始
 	for i := 1; i < 4; i++ {
 		select {
 		case <-called:
@@ -371,23 +381,29 @@ func TestHandlerQueueing(t *testing.T) {
 
 	// Send one batch, wait for it to arrive and block so the queue fills up.
 	// Then check whether the queue is truncated in the front once its full.
+	// 发送一个batch，等待它到达并且阻塞，这样queue就能填满
+	// 之后检查是否queue是从头部开始截断，一旦它满了之后
 	h.Send(alerts[:maxBatchSize]...)
 	<-called
 
 	// Fill the 3*maxBatchSize queue.
+	// 填满大小为3 * maxBatchSize的队列
 	h.Send(alerts[1*maxBatchSize : 2*maxBatchSize]...)
 	h.Send(alerts[2*maxBatchSize : 3*maxBatchSize]...)
 	h.Send(alerts[3*maxBatchSize : 4*maxBatchSize]...)
 
 	// Send the batch that drops the first one.
+	// 再发送一个batch，这样第一个batch就被丢弃了
 	h.Send(alerts[4*maxBatchSize : 5*maxBatchSize]...)
 
 	expected = alerts[:maxBatchSize]
+	// 第一个请求，期望的是alerts["maxBatchSize"]
 	unblock <- struct{}{}
 
 	for i := 2; i < 4; i++ {
 		select {
 		case <-called:
+			// 之后获取到的应该是2, 3, 4的maxBatchSize
 			expected = alerts[i*maxBatchSize : (i+1)*maxBatchSize]
 			unblock <- struct{}{}
 		case <-time.After(5 * time.Second):
@@ -458,6 +474,7 @@ alerting:
 		if err != nil {
 			t.Fatalf("Error creating config hash:%v", err)
 		}
+		// 构建target group的map
 		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
 			tt.in,
 		}
@@ -489,6 +506,7 @@ func TestDroppedAlertmanagers(t *testing.T) {
 	n := NewManager(&Options{}, nil)
 
 	cfg := &config.Config{}
+	// 将source label为"__address__"，且匹配正则表达式"alertmanager:9093"的丢弃
 	s := `
 alerting:
   alertmanagers:
@@ -513,6 +531,7 @@ alerting:
 		if err != nil {
 			t.Fatalf("Error creating config hash:%v", err)
 		}
+		// 将配置的值作为索引
 		tgs[fmt.Sprintf("%x", md5.Sum(b))] = []*targetgroup.Group{
 			tt.in,
 		}

@@ -470,6 +470,7 @@ func (c *AlertingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 }
 
 // AlertmanagerConfig configures how Alertmanagers can be discovered and communicated with.
+// AlertmanagerConfig配置了Alertmanagers如何被发现以及如何进行交互
 type AlertmanagerConfig struct {
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
@@ -478,13 +479,17 @@ type AlertmanagerConfig struct {
 	HTTPClientConfig       config_util.HTTPClientConfig     `yaml:",inline"`
 
 	// The URL scheme to use when talking to Alertmanagers.
+	// 用于和Alertmanagers进行交互的URL scheme
 	Scheme string `yaml:"scheme,omitempty"`
 	// Path prefix to add in front of the push endpoint path.
+	// push endpoint path的路径前缀
 	PathPrefix string `yaml:"path_prefix,omitempty"`
 	// The timeout used when sending alerts.
+	// 发送alerts的超时设置
 	Timeout model.Duration `yaml:"timeout,omitempty"`
 
 	// List of Alertmanager relabel configurations.
+	// 一系列Alertmanager的relabel配置
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 }
 

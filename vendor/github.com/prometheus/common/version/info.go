@@ -34,6 +34,7 @@ var (
 )
 
 // NewCollector returns a collector which exports metrics about current version information.
+// NewCollector返回一个collector，它会暴露关于当前的version信息的metrics
 func NewCollector(program string) *prometheus.GaugeVec {
 	buildInfo := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{

@@ -65,12 +65,14 @@ func TestQueryConcurrency(t *testing.T) {
 
 	select {
 	case <-processing:
+		// 超过并行度的query不会被执行
 		t.Fatalf("Query above concurrency threshold being executed")
 	case <-time.After(20 * time.Millisecond):
 		// Expected.
 	}
 
 	// Terminate a running query.
+	// 终结一个正在运行的query
 	block <- struct{}{}
 
 	select {
@@ -81,6 +83,7 @@ func TestQueryConcurrency(t *testing.T) {
 	}
 
 	// Terminate remaining queries.
+	// 终结剩余的queries
 	for i := 0; i < opts.MaxConcurrent; i++ {
 		block <- struct{}{}
 	}
@@ -125,6 +128,7 @@ func TestQueryCancel(t *testing.T) {
 	defer cancelCtx()
 
 	// Cancel a running query before it completes.
+	// 在一个正在运行的query结束前进行Cancel
 	block := make(chan struct{})
 	processing := make(chan struct{})
 
@@ -154,6 +158,7 @@ func TestQueryCancel(t *testing.T) {
 	}
 
 	// Canceling a query before starting it must have no effect.
+	// 如果在一个query启动前进行Cancel，则应该不产生任何影响
 	query2 := engine.newTestQuery(func(ctx context.Context) error {
 		return contextDone(ctx, "test statement execution")
 	})
@@ -166,6 +171,7 @@ func TestQueryCancel(t *testing.T) {
 }
 
 // errQuerier implements storage.Querier which always returns error.
+// errQuerier实现了storage.Querier接口，总是返回错误
 type errQuerier struct {
 	err error
 }
@@ -178,6 +184,7 @@ func (*errQuerier) LabelNames() ([]string, error)             { return nil, nil 
 func (*errQuerier) Close() error                              { return nil }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
+// errSeriesSet实现了storage.SeriesSet，总是返回error
 type errSeriesSet struct {
 	err error
 }
@@ -202,6 +209,7 @@ func TestQueryError(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
+	// 创建一个即使的查询
 	vectorQuery, err := engine.NewInstantQuery(queryable, "foo", time.Unix(1, 0))
 	if err != nil {
 		t.Fatalf("unexpected error creating query: %q", err)

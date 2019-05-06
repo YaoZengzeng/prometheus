@@ -162,6 +162,7 @@ type PrometheusVersion struct {
 }
 
 // Options for the web Handler.
+// web Handler的选项
 type Options struct {
 	Context       context.Context
 	TSDB          func() *tsdb.DB
@@ -407,6 +408,7 @@ func (h *Handler) Quit() <-chan struct{} {
 }
 
 // Reload returns the receive-only channel that signals configuration reload requests.
+// Reload返回一个只用于接收的channel，用于发送配置重载请求的信号
 func (h *Handler) Reload() <-chan chan error {
 	return h.reloadCh
 }

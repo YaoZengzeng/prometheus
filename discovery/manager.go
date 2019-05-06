@@ -189,6 +189,7 @@ func (m *Manager) Run() error {
 }
 
 // SyncCh returns a read only channel used by all the clients to receive target updates.
+// SyncCh返回一个只读的channel，用于所有的clients接收target updates
 func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 	return m.syncCh
 }

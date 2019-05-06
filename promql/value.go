@@ -160,6 +160,7 @@ func (vec Vector) ContainsSameLabelset() bool {
 
 // Matrix is a slice of Seriess that implements sort.Interface and
 // has a String method.
+// Matrix是一系列的Series，实现了sort.Interface并且有一个String方法
 type Matrix []Series
 
 func (m Matrix) String() string {
@@ -203,6 +204,7 @@ func (m Matrix) ContainsSameLabelset() bool {
 
 // Result holds the resulting value of an execution or an error
 // if any occurred.
+// Result包含了一次query的结果或者任何的error，如果发生了的话
 type Result struct {
 	Err      error
 	Value    Value

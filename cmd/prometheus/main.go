@@ -237,8 +237,10 @@ func main() {
 	a.Flag("query.timeout", "Maximum time a query may take before being aborted.").
 		Default("2m").SetValue(&cfg.queryTimeout)
 
+	// 可以并行处理的查询的数目
 	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryConcurrency)
+	// 单个的查询能够载入内存的最大的samples数目，如果超过这个数目，查询就会失败，因此这限制了一个查询可以返回的samples的数目
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they would load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
@@ -319,6 +321,7 @@ func main() {
 	promql.SetDefaultEvaluationInterval(time.Duration(config.DefaultGlobalConfig.EvaluationInterval))
 
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
+	// k8s client会以明文对bearer tokens进行log
 	klog.ClampLevel(6)
 	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
@@ -413,6 +416,7 @@ func main() {
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	// Monitor outgoing connections on default transport with conntrack.
+	// 用conntrack对在默认的transport发出的连接进行监控
 	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
 		conntrack.DialWithTracing(),
 	)
@@ -437,18 +441,22 @@ func main() {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.AlertingConfig.AlertmanagerConfigs {
 				// AlertmanagerConfigs doesn't hold an unique identifier so we use the config hash as the identifier.
+				// AlertmanagerConfigs没有维护一个唯一的标识符，因此我们使用config hash作为identifier
 				b, err := json.Marshal(v)
 				if err != nil {
 					return err
 				}
+				// 每一个AlertmanagerCongis对应一个ServiceDiscoveryConfig
 				c[fmt.Sprintf("%x", md5.Sum(b))] = v.ServiceDiscoveryConfig
 			}
 			return discoveryManagerNotify.ApplyConfig(c)
 		},
 		func(cfg *config.Config) error {
 			// Get all rule files matching the configuration paths.
+			// 获取所有匹配configuration paths的rule files
 			var files []string
 			for _, pat := range cfg.RuleFiles {
+				// 获取和pattern匹配的一系列文件路径
 				fs, err := filepath.Glob(pat)
 				if err != nil {
 					// The only error can be a bad pattern.
@@ -469,6 +477,7 @@ func main() {
 	dbOpen := make(chan struct{})
 
 	// sync.Once is used to make sure we can close the channel at different execution stages(SIGTERM or when the config is loaded).
+	// sync.Once用于确保我们可以在不同的执行阶段关闭channel，且channel只会被关闭一次
 	type closeOnce struct {
 		C     chan struct{}
 		once  sync.Once
@@ -495,6 +504,7 @@ func main() {
 		g.Add(
 			func() error {
 				// Don't forget to release the reloadReady channel so that waiting blocks can exit normally.
+				// 不要忘记释放reloadReady channel，这样等待的block可以正常退出
 				select {
 				case <-term:
 					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
@@ -560,6 +570,8 @@ func main() {
 			func(err error) {
 				// Scrape manager needs to be stopped before closing the local TSDB
 				// so that it doesn't try to write samples to a closed storage.
+				// Scrape manager需要在关闭local TSDB之前停止，这样它就不会尝试往关闭的storage
+				// 中写入samples
 				level.Info(logger).Log("msg", "Stopping scrape manager...")
 				scrapeManager.Stop()
 			},
@@ -570,6 +582,7 @@ func main() {
 
 		// Make sure that sighup handler is registered with a redirect to the channel before the potentially
 		// long and synchronous tsdb init.
+		// 确保sighup handler已经注册到一个重定向的channel，在潜在的长时间并且同步的tsdb初始化之前
 		hup := make(chan os.Signal, 1)
 		signal.Notify(hup, syscall.SIGHUP)
 		cancel := make(chan struct{})
@@ -613,6 +626,7 @@ func main() {
 				case <-dbOpen:
 					break
 				// In case a shutdown is initiated before the dbOpen is released
+				// 万一shutdown在dbOpen被释放前初始化
 				case <-cancel:
 					reloadReady.Close()
 					return nil
@@ -622,9 +636,11 @@ func main() {
 					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
+				// 初始化配置加载完成之后，关闭reloadReady里的channel
 				reloadReady.Close()
 
 				webHandler.Ready()
+				// Server已经准备好接收web请求了
 				level.Info(logger).Log("msg", "Server is ready to receive web requests.")
 				<-cancel
 				return nil
@@ -664,6 +680,7 @@ func main() {
 						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
 					}
 				}
+				// 打开数据库
 				db, err := tsdb.Open(
 					cfg.localStoragePath,
 					log.With(logger, "component", "tsdb"),
@@ -686,11 +703,13 @@ func main() {
 
 				startTimeMargin := int64(2 * time.Duration(cfg.tsdb.MinBlockDuration).Seconds() * 1000)
 				localStorage.Set(db, startTimeMargin)
+				// 数据库启动完毕，关闭dbOpen
 				close(dbOpen)
 				<-cancel
 				return nil
 			},
 			func(err error) {
+				// 直接关闭fanoutStorage
 				if err := fanoutStorage.Close(); err != nil {
 					level.Error(logger).Log("msg", "Error stopping storage", "err", err)
 				}
@@ -700,8 +719,10 @@ func main() {
 	}
 	{
 		// Web handler.
+		// Web handler是能够主动结束的
 		g.Add(
 			func() error {
+				// 启动web handler
 				if err := webHandler.Run(ctxWeb); err != nil {
 					return errors.Wrapf(err, "error starting web server")
 				}
@@ -756,12 +777,14 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 		}
 	}()
 
+	// 加载配置文件，一般为"prometheus.yml"
 	conf, err := config.LoadFile(filename)
 	if err != nil {
 		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
 	}
 
 	failed := false
+	// 遍历各个reload函数
 	for _, rl := range rls {
 		if err := rl(conf); err != nil {
 			level.Error(logger).Log("msg", "Failed to apply configuration", "err", err)
@@ -771,6 +794,7 @@ func reloadConfig(filename string, logger log.Logger, rls ...func(*config.Config
 	if failed {
 		return errors.Errorf("one or more errors occurred while applying the new configuration (--config.file=%q)", filename)
 	}
+	// 设置promql全局的查询时间
 	promql.SetDefaultEvaluationInterval(time.Duration(conf.GlobalConfig.EvaluationInterval))
 	level.Info(logger).Log("msg", "Completed loading of configuration file", "filename", filename)
 	return nil

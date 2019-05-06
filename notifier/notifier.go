@@ -133,6 +133,7 @@ type Options struct {
 	ExternalLabels labels.Labels
 	RelabelConfigs []*relabel.Config
 	// Used for sending HTTP requests to the Alertmanager.
+	// Do用于发送HTTP请求给AlertManager
 	Do func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error)
 
 	Registerer prometheus.Registerer
@@ -215,6 +216,7 @@ func newAlertMetrics(r prometheus.Registerer, queueCap int, queueLen, alertmanag
 	return m
 }
 
+// do函数作为默认的请求发送函数
 func do(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 	if client == nil {
 		client = http.DefaultClient
@@ -256,6 +258,7 @@ func NewManager(o *Options, logger log.Logger) *Manager {
 }
 
 // ApplyConfig updates the status state as the new config requires.
+// ApplyConfig根据新的配置的需求更新状态
 func (n *Manager) ApplyConfig(conf *config.Config) error {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
@@ -265,6 +268,7 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 
 	amSets := make(map[string]*alertmanagerSet)
 
+	// 创建新的AlertmanagerSet
 	for _, cfg := range conf.AlertingConfig.AlertmanagerConfigs {
 		// 根据config创建Alertmanager Set
 		ams, err := newAlertmanagerSet(cfg, n.logger)
@@ -280,6 +284,7 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
+		// 将config的json编码的md5值作为索引
 		amSets[fmt.Sprintf("%x", md5.Sum(b))] = ams
 	}
 
@@ -288,6 +293,7 @@ func (n *Manager) ApplyConfig(conf *config.Config) error {
 	return nil
 }
 
+// maxBatchSize为64
 const maxBatchSize = 64
 
 func (n *Manager) queueLen() int {
@@ -316,6 +322,7 @@ func (n *Manager) nextBatch() []*Alert {
 }
 
 // Run dispatches notifications continuously.
+// Run持续地分发notifications
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 
 	for {
@@ -323,8 +330,10 @@ func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 		case <-n.ctx.Done():
 			return
 		case ts := <-tsets:
+			// 从tsets中加载新的targetgroup
 			n.reload(ts)
 		case <-n.more:
+			// 说明队列中有item需要分发
 		}
 		alerts := n.nextBatch()
 
@@ -332,6 +341,7 @@ func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 			n.metrics.dropped.Add(float64(len(alerts)))
 		}
 		// If the queue still has items left, kick off the next iteration.
+		// 如果queue中还有items，则启动下一轮迭代
 		if n.queueLen() > 0 {
 			n.setMore()
 		}
@@ -354,11 +364,14 @@ func (n *Manager) reload(tgs map[string][]*targetgroup.Group) {
 
 // Send queues the given notification requests for processing.
 // Panics if called on a handler that is not running.
+// Send将给定的notification requests进行排队处理
+// Panics如果调用的handler不在运行
 func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
 	// Attach external labels before relabelling and sending.
+	// 在进行relabelling和sending之前，先关联external labels
 	for _, a := range alerts {
 		lb := labels.NewBuilder(a.Labels)
 
@@ -375,7 +388,9 @@ func (n *Manager) Send(alerts ...*Alert) {
 
 	// Queue capacity should be significantly larger than a single alert
 	// batch could be.
+	// Queue capacity应该比单个的alert batch要大
 	if d := len(alerts) - n.opts.QueueCapacity; d > 0 {
+		// 丢弃前d个alerts
 		alerts = alerts[d:]
 
 		level.Warn(n.logger).Log("msg", "Alert batch larger than queue capacity, dropping alerts", "num_dropped", d)
@@ -384,6 +399,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 
 	// If the queue is full, remove the oldest alerts in favor
 	// of newer ones.
+	// 如果队列满了，则移除旧的alerts
 	if d := (len(n.queue) + len(alerts)) - n.opts.QueueCapacity; d > 0 {
 		n.queue = n.queue[d:]
 
@@ -393,6 +409,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.queue = append(n.queue, alerts...)
 
 	// Notify sending goroutine that there are alerts to be processed.
+	// 通知发送的goroutine有alerts需要处理
 	n.setMore()
 }
 
@@ -402,6 +419,7 @@ func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
 	for _, alert := range alerts {
 		labels := relabel.Process(alert.Labels, n.opts.RelabelConfigs...)
 		if labels != nil {
+			// 如果relabel的结果不为nil,则进行重新赋值并且append到relabelAlerts
 			alert.Labels = labels
 			relabeledAlerts = append(relabeledAlerts, alert)
 		}
@@ -410,9 +428,11 @@ func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
 }
 
 // setMore signals that the alert queue has items.
+// setMore表示alert queue中有内容了
 func (n *Manager) setMore() {
 	// If we cannot send on the channel, it means the signal already exists
 	// and has not been consumed yet.
+	// 如果我们不能发送到channel，则表明信号已经存在了，还没有被消费
 	select {
 	case n.more <- struct{}{}:
 	default:
@@ -420,6 +440,7 @@ func (n *Manager) setMore() {
 }
 
 // Alertmanagers returns a slice of Alertmanager URLs.
+// Alertmanagers返回一系列的Alertmanager URLs
 func (n *Manager) Alertmanagers() []*url.URL {
 	n.mtx.RLock()
 	amSets := n.alertmanagers
@@ -459,9 +480,12 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
+// sendAll并行地将alerts发送给所有配置好的Alertmanagers
+// 它返回true，如果alerts至少成功地发送给了一个Alertmanager
 func (n *Manager) sendAll(alerts ...*Alert) bool {
 	begin := time.Now()
 
+	// 将alerts进行marshal
 	b, err := json.Marshal(alerts)
 	if err != nil {
 		level.Error(n.logger).Log("msg", "Encoding alerts failed", "err", err)
@@ -486,6 +510,7 @@ func (n *Manager) sendAll(alerts ...*Alert) bool {
 			defer cancel()
 
 			go func(ams *alertmanagerSet, am alertmanager) {
+				// 获取alertmanager的url
 				u := am.url().String()
 
 				if err := n.sendOne(ctx, ams.client, u, b); err != nil {
@@ -514,6 +539,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Content-Type", contentTypeJSON)
+	// 发送HTTP请求
 	resp, err := n.opts.Do(ctx, c, req)
 	if err != nil {
 		return err
@@ -524,6 +550,7 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 	}()
 
 	// Any HTTP status 2xx is OK.
+	// 任何HTTP的状态为2xx都是正确的
 	if resp.StatusCode/100 != 2 {
 		return errors.Errorf("bad response status %s", resp.Status)
 	}
@@ -531,12 +558,14 @@ func (n *Manager) sendOne(ctx context.Context, c *http.Client, url string, b []b
 }
 
 // Stop shuts down the notification handler.
+// Stop关闭notification handler
 func (n *Manager) Stop() {
 	level.Info(n.logger).Log("msg", "Stopping notification manager...")
 	n.cancel()
 }
 
 // alertmanager holds Alertmanager endpoint information.
+// alertmanager维护了Alertmanager的endpoint信息
 type alertmanager interface {
 	url() *url.URL
 }
@@ -584,11 +613,13 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger) (*ale
 
 // sync extracts a deduplicated set of Alertmanager endpoints from a list
 // of target groups definitions.
+// sync从一系列的target groups definitions中抽取出一系列重复的Alertmanager endpoints
 func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	allAms := []alertmanager{}
 	allDroppedAms := []alertmanager{}
 
 	for _, tg := range tgs {
+		// 从targetgroup构建alertmanager
 		ams, droppedAms, err := alertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
 			level.Error(s.logger).Log("msg", "Creating discovered Alertmanagers failed", "err", err)
@@ -601,6 +632,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	// Set new Alertmanagers and deduplicate them along their unique URL.
+	// 设置新的Alertmanagers并且根据URL进行去重
 	s.ams = []alertmanager{}
 	s.droppedAms = []alertmanager{}
 	s.droppedAms = append(s.droppedAms, allDroppedAms...)
@@ -627,6 +659,7 @@ func postPath(pre string) string {
 
 // alertmanagersFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
+// alertmanagersFromGroup从target group和相关的AlertmanagerConfig中抽取一系列的alertmanagers
 func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
 	var droppedAlertManagers []alertmanager
@@ -638,16 +671,19 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
 		}
 		// Set configured scheme as the initial scheme label for overwrite.
+		// 设置初始的scheme label
 		lbls = append(lbls, labels.Label{Name: model.SchemeLabel, Value: cfg.Scheme})
 		lbls = append(lbls, labels.Label{Name: pathLabel, Value: postPath(cfg.PathPrefix)})
 
 		// Combine target labels with target group labels.
+		// 将target labels和target group labels融合
 		for ln, lv := range tg.Labels {
 			if _, ok := tlset[ln]; !ok {
 				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
 			}
 		}
 
+		// 进行relabel
 		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
 		if lset == nil {
 			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{lbls})
@@ -658,6 +694,8 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 
 		// addPort checks whether we should add a default port to the address.
 		// If the address is not valid, we don't append a port either.
+		// addPort检测我们是否应该给地址增加一个默认的端口
+		// 如果地址是不合法的，我们也不会增加一个端口
 		addPort := func(s string) bool {
 			// If we can split, a port exists and we don't have to add one.
 			if _, _, err := net.SplitHostPort(s); err == nil {
@@ -670,6 +708,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 		}
 		addr := lset.Get(model.AddressLabel)
 		// If it's an address with no trailing port, infer it based on the used scheme.
+		// 如果一个地址没有trailing port，根据scheme进行推测
 		if addPort(addr) {
 			// Addresses reaching this point are already wrapped in [] if necessary.
 			switch lset.Get(model.SchemeLabel) {
@@ -689,6 +728,8 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 
 		// Meta labels are deleted after relabelling. Other internal labels propagate to
 		// the target which decides whether they will be part of their label set.
+		// Meta labels会在relabelling之后删除，其他的internal labels传播到target，决定他们是否
+		// 会成为label set的一部分
 		for _, l := range lset {
 			if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
 				lb.Del(l.Name)
