@@ -157,11 +157,13 @@ func parseFlags() *config {
 	return cfg
 }
 
+// writer包括Name()和写入Samples的Write()方法
 type writer interface {
 	Write(samples model.Samples) error
 	Name() string
 }
 
+// raeder包括Name()和写入ReadRequest的Read()方法
 type reader interface {
 	Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error)
 	Name() string
@@ -170,6 +172,7 @@ type reader interface {
 func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 	var writers []writer
 	var readers []reader
+	// 根据配置，构建graphite, openstdb以及influxdb的client
 	if cfg.graphiteAddress != "" {
 		c := graphite.NewClient(
 			log.With(logger, "storage", "Graphite"),
@@ -186,12 +189,14 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 		writers = append(writers, c)
 	}
 	if cfg.influxdbURL != "" {
+		// 解析influxdb的url
 		url, err := url.Parse(cfg.influxdbURL)
 		if err != nil {
 			level.Error(logger).Log("msg", "Failed to parse InfluxDB URL", "url", cfg.influxdbURL, "err", err)
 			os.Exit(1)
 		}
 		conf := influx.HTTPConfig{
+			// 构建访问influxdb的http配置
 			Addr:     url.String(),
 			Username: cfg.influxdbUsername,
 			Password: cfg.influxdbPassword,
@@ -213,6 +218,7 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 
 func serve(logger log.Logger, addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
+		// 读取请求
 		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			level.Error(logger).Log("msg", "Read error", "err", err.Error())
@@ -220,6 +226,7 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 			return
 		}
 
+		// 解析metric数据
 		reqBuf, err := snappy.Decode(nil, compressed)
 		if err != nil {
 			level.Error(logger).Log("msg", "Decode error", "err", err.Error())
@@ -227,6 +234,7 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 			return
 		}
 
+		// 将reqBuf解析至WriteRequest中
 		var req prompb.WriteRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
 			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
@@ -234,10 +242,12 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 			return
 		}
 
+		// 从WriteRequest中解析出samples
 		samples := protoToSamples(&req)
 		receivedSamples.Add(float64(len(samples)))
 
 		var wg sync.WaitGroup
+		// 将sample一个个写入writers
 		for _, w := range writers {
 			wg.Add(1)
 			go func(rw writer) {
@@ -263,6 +273,7 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 			return
 		}
 
+		// 从reqBuf中解析出prompb.ReadRequest
 		var req prompb.ReadRequest
 		if err := proto.Unmarshal(reqBuf, &req); err != nil {
 			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
@@ -278,6 +289,7 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 		reader := readers[0]
 
 		var resp *prompb.ReadResponse
+		// 发送ReadRequest，读取ReadResponse
 		resp, err = reader.Read(&req)
 		if err != nil {
 			level.Warn(logger).Log("msg", "Error executing query", "query", req, "storage", reader.Name(), "err", err)
@@ -294,6 +306,7 @@ func serve(logger log.Logger, addr string, writers []writer, readers []reader) e
 		w.Header().Set("Content-Type", "application/x-protobuf")
 		w.Header().Set("Content-Encoding", "snappy")
 
+		// 对数据进行encode
 		compressed = snappy.Encode(nil, data)
 		if _, err := w.Write(compressed); err != nil {
 			level.Warn(logger).Log("msg", "Error writing response", "storage", reader.Name(), "err", err)

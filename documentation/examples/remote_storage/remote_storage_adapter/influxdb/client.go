@@ -31,6 +31,7 @@ import (
 )
 
 // Client allows sending batches of Prometheus samples to InfluxDB.
+// Client允许发送一系列的Prometheus samples到InfluxDB
 type Client struct {
 	logger log.Logger
 
@@ -42,6 +43,7 @@ type Client struct {
 
 // NewClient creates a new Client.
 func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) *Client {
+	// 调用创建influxdb的client
 	c, err := influx.NewHTTPClient(conf)
 	// Currently influx.NewClient() *should* never return an error.
 	if err != nil {
@@ -81,13 +83,16 @@ func tagsFromMetric(m model.Metric) map[string]string {
 // Write sends a batch of samples to InfluxDB via its HTTP API.
 func (c *Client) Write(samples model.Samples) error {
 	points := make([]*influx.Point, 0, len(samples))
+	// 遍历samples，将sample转换为influx.Point
 	for _, s := range samples {
 		v := float64(s.Value)
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			level.Debug(c.logger).Log("msg", "cannot send  to InfluxDB, skipping sample", "value", v, "sample", s)
+			// 跳过不能解析的sample
 			c.ignoredSamples.Inc()
 			continue
 		}
+		// 转换为influxdb的point
 		p, err := influx.NewPoint(
 			string(s.Metric[model.MetricNameLabel]),
 			tagsFromMetric(s.Metric),
@@ -109,12 +114,15 @@ func (c *Client) Write(samples model.Samples) error {
 		return err
 	}
 	bps.AddPoints(points)
+	// 批量写入
 	return c.client.Write(bps)
 }
 
 func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 	labelsToSeries := map[string]*prompb.TimeSeries{}
+	// 逐个遍历prompb.ReadRequest中的各个Query
 	for _, q := range req.Queries {
+		// 构建influxdb的query
 		command, err := c.buildCommand(q)
 		if err != nil {
 			return nil, err
@@ -129,6 +137,7 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 			return nil, errors.New(resp.Err)
 		}
 
+		// 将结果合并
 		if err = mergeResult(labelsToSeries, resp.Results); err != nil {
 			return nil, err
 		}
@@ -192,6 +201,7 @@ func escapeSlashes(str string) string {
 }
 
 func mergeResult(labelsToSeries map[string]*prompb.TimeSeries, results []influx.Result) error {
+	// 将influxdb的result转换为prometheus的TimeSeries
 	for _, r := range results {
 		for _, s := range r.Series {
 			k := concatLabels(s.Tags)
@@ -313,11 +323,13 @@ func (c Client) Name() string {
 }
 
 // Describe implements prometheus.Collector.
+// Describe实现了prometheus.Collector
 func (c *Client) Describe(ch chan<- *prometheus.Desc) {
 	ch <- c.ignoredSamples.Desc()
 }
 
 // Collect implements prometheus.Collector.
+// Collect实现了prometheus.Collector
 func (c *Client) Collect(ch chan<- prometheus.Metric) {
 	ch <- c.ignoredSamples
 }

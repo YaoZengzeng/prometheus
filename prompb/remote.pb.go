@@ -238,6 +238,7 @@ func (m *Query) GetHints() *ReadHints {
 
 type QueryResult struct {
 	// Samples within a time series must be ordered by time.
+	// 在一个time series中的Sample必须以时间为顺序
 	Timeseries           []*TimeSeries `protobuf:"bytes,1,rep,name=timeseries,proto3" json:"timeseries,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}      `json:"-"`
 	XXX_unrecognized     []byte        `json:"-"`
