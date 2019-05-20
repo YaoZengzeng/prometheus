@@ -88,6 +88,7 @@ func TestDroppedTargetsList(t *testing.T) {
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __metrics_path__=\"\", __scheme__=\"\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
+	// 将target group同步至scrap pool
 	sp.Sync(tgs)
 	sp.Sync(tgs)
 	if len(sp.droppedTargets) != expectedLength {

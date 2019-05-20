@@ -188,6 +188,7 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 // 可能会返回一个经过修改的labelSet
 func Process(labels labels.Labels, cfgs ...*Config) labels.Labels {
 	for _, cfg := range cfgs {
+		// 遍历config进行relabel
 		labels = relabel(labels, cfg)
 		if labels == nil {
 			return nil
@@ -240,6 +241,7 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 		// 对于LabelMap，遍历lset，然后将l.Name用正则表达式进行替换
 		for _, l := range lset {
 			if cfg.Regex.MatchString(l.Name) {
+				// 如果有标签的名字匹配l.Name，则用cfg.Replacement替换l.Name
 				res := cfg.Regex.ReplaceAllString(l.Name, cfg.Replacement)
 				lb.Set(res, l.Value)
 			}

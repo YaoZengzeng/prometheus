@@ -34,6 +34,7 @@ import (
 // ServiceDiscoveryConfig用于配置一系列不同的服务发现机制
 type ServiceDiscoveryConfig struct {
 	// List of labeled target groups for this job.
+	// 一系列labeled target groups用于这个job
 	StaticConfigs []*targetgroup.Group `yaml:"static_configs,omitempty"`
 	// List of DNS service discovery configurations.
 	DNSSDConfigs []*dns.SDConfig `yaml:"dns_sd_configs,omitempty"`

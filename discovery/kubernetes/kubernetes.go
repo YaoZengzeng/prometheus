@@ -91,7 +91,9 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // SDConfig is the configuration for Kubernetes service discovery.
 // SDConfig是Kubernetes服务发现的配置
 type SDConfig struct {
+	// APIServer的URL
 	APIServer          config_util.URL              `yaml:"api_server,omitempty"`
+	// Kubernetes中的Role
 	Role               Role                         `yaml:"role"`
 	HTTPClientConfig   config_util.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery           `yaml:"namespaces,omitempty"`
@@ -161,6 +163,7 @@ type discoverer interface {
 
 // Discovery implements the discoverer interface for discovering
 // targets from Kubernetes.
+// Discovery实现了discoverer接口，用于从Kubernetes中发现targets
 type Discovery struct {
 	sync.RWMutex
 	client             kubernetes.Interface
@@ -197,12 +200,14 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		if err != nil {
 			return nil, err
 		}
+		// 通过in-cluster config使用pod service account
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
 		rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
 		if err != nil {
 			return nil, err
 		}
+		// 否则连接api server
 		kcfg = &rest.Config{
 			Host:      conf.APIServer.String(),
 			Transport: rt,
@@ -275,8 +280,10 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go eps.serviceInf.Run(ctx.Done())
 			go eps.podInf.Run(ctx.Done())
 		}
+	// 服务发现pods
 	case RolePod:
 		for _, namespace := range namespaces {
+			// 对某个namespace下的pods进行监听
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -286,11 +293,13 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(options)
 				},
 			}
+			// pod实现了discoverer接口
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
 			)
 			d.discoverers = append(d.discoverers, pod)
+			// 运行pod.informer
 			go pod.informer.Run(ctx.Done())
 		}
 	case RoleService:
@@ -352,6 +361,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	var wg sync.WaitGroup
+	// 遍历各个discoverers并运行
 	for _, dd := range d.discoverers {
 		wg.Add(1)
 		go func(d discoverer) {
@@ -376,6 +386,7 @@ func send(ctx context.Context, l log.Logger, role Role, ch chan<- []*targetgroup
 	}
 	select {
 	case <-ctx.Done():
+	// 每次有一个新的targetgroup就将它通过ch发送出去
 	case ch <- []*targetgroup.Group{tg}:
 	}
 }

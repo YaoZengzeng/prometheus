@@ -21,6 +21,7 @@ import (
 
 // Parser parses samples from a byte slice of samples in the official
 // Prometheus and OpenMetrics text exposition formats.
+// Parser从一个byte slice of samples获取samples，从官方的Prometheus以及OpenMetrics的text exposition中
 type Parser interface {
 	// Series returns the bytes of the series, the timestamp if set, and the value
 	// of the current sample.
@@ -77,6 +78,7 @@ const (
 )
 
 // MetricType represents metric type values.
+// MetricType代表了metric的类型值
 type MetricType string
 
 const (

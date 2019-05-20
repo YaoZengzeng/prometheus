@@ -71,6 +71,7 @@ const (
 
 	// ParamLabelPrefix is a prefix for labels that provide URL parameters
 	// used to scrape a target.
+	// ParamLabelPrefix是用来提供抓取一个target的URL parameters
 	ParamLabelPrefix = "__param_"
 
 	// JobLabel is the label name indicating the job from which a timeseries

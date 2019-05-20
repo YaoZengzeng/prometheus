@@ -48,7 +48,8 @@ const (
 // Target代表一个HTTP或者HTTPS endpoint
 type Target struct {
 	// Labels before any processing.
-	// 在进行所有处理之前的Labels
+	// 在进行relabel处理之前的Labels
+	// 其实已经添加了job, __scheme__, __metrics_path__这些额外的labels
 	discoveredLabels labels.Labels
 	// Any labels that are added to this target and its metrics.
 	// 任何增加到这个target以及它的metrics的labels
@@ -86,6 +87,7 @@ type metricMetadataStore interface {
 }
 
 // MetricMetadata is a piece of metadata for a metric.
+// MetricMetadata是一个metric的一系列元数据
 type MetricMetadata struct {
 	Metric string
 	Type   textparse.MetricType
@@ -117,6 +119,7 @@ func (t *Target) Metadata(metric string) (MetricMetadata, bool) {
 func (t *Target) setMetadataStore(s metricMetadataStore) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
+	// 设置target的metadata
 	t.metadata = s
 }
 
@@ -124,6 +127,7 @@ func (t *Target) setMetadataStore(s metricMetadataStore) {
 // hash返回一个target的identifying hash
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
+	// 哈希值主要依据labels和url进行计算获得
 	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
 	h.Write([]byte(t.URL().String()))
 
@@ -149,7 +153,7 @@ func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration
 }
 
 // Labels returns a copy of the set of all public labels of the target.
-// Labels返回target的所有public labels集合的拷贝
+// Labels返回target的所有public labels集合的拷贝，剔除所有以__开头的labels
 func (t *Target) Labels() labels.Labels {
 	lset := make(labels.Labels, 0, len(t.labels))
 	for _, l := range t.labels {
@@ -161,6 +165,7 @@ func (t *Target) Labels() labels.Labels {
 }
 
 // DiscoveredLabels returns a copy of the target's labels before any processing.
+// DiscoveredLabels返回在没有经过任何处理的targets的labels的一份拷贝
 func (t *Target) DiscoveredLabels() labels.Labels {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
@@ -178,6 +183,7 @@ func (t *Target) SetDiscoveredLabels(l labels.Labels) {
 }
 
 // URL returns a copy of the target's URL.
+// URL返回一个target的URL的拷贝
 func (t *Target) URL() *url.URL {
 	params := url.Values{}
 
@@ -186,12 +192,15 @@ func (t *Target) URL() *url.URL {
 		copy(params[k], v)
 	}
 	for _, l := range t.labels {
+		// 跳过所有不是以__param_开头的labels
 		if !strings.HasPrefix(l.Name, model.ParamLabelPrefix) {
 			continue
 		}
+		// 去除label name中的__param_
 		ks := l.Name[len(model.ParamLabelPrefix):]
 
 		if len(params[ks]) > 0 {
+			// 设置prams的第一个值为l.Value
 			params[ks][0] = l.Value
 		} else {
 			params[ks] = []string{l.Value}
@@ -206,6 +215,7 @@ func (t *Target) URL() *url.URL {
 	}
 }
 
+// report用于记录当前target的状态
 func (t *Target) report(start time.Time, dur time.Duration, err error) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
@@ -338,6 +348,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	lb := labels.NewBuilder(lset)
 
 	for _, l := range scrapeLabels {
+		// 如果lset中没有的话，将根据配置文件生成的scrapeLabels写入
 		if lv := lset.Get(l.Name); lv == "" {
 			lb.Set(l.Name, l.Value)
 		}
@@ -359,6 +370,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		// lset为nil说明target被丢弃了
 		return nil, preRelabelLabels, nil
 	}
+	// 查看__address__ label是否被设置
 	if v := lset.Get(model.AddressLabel); v == "" {
 		return nil, nil, errors.New("no address")
 	}
@@ -371,6 +383,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	// 如果地址不合法，我们同样不添加端口
 	addPort := func(s string) bool {
 		// If we can split, a port exists and we don't have to add one.
+		// 如果我们可以split，说明端口存在，我们不需要再为它添加一个
 		if _, _, err := net.SplitHostPort(s); err == nil {
 			return false
 		}
@@ -386,6 +399,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	// 如果一个地址没有端口，则根据它的scheme进行推测
 	if addPort(addr) {
 		// Addresses reaching this point are already wrapped in [] if necessary.
+		// 如果有必要的话，根据scheme为地址添加一个端口
 		switch lset.Get(model.SchemeLabel) {
 		case "http", "":
 			addr = addr + ":80"
@@ -411,6 +425,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	}
 
 	// Default the instance label to the target address.
+	// 默认将instance label设置为target address
 	if v := lset.Get(model.InstanceLabel); v == "" {
 		lb.Set(model.InstanceLabel, addr)
 	}
@@ -423,6 +438,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 			return nil, nil, errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
 	}
+	// 第一个返回值是relabel之后的labels，第二个参数为relabel之前的参数
 	return res, preRelabelLabels, nil
 }
 
@@ -434,9 +450,11 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 	for i, tlset := range tg.Targets {
 		lbls := make([]labels.Label, 0, len(tlset)+len(tg.Labels))
 
+		// 添加某个target特定的labels
 		for ln, lv := range tlset {
 			lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
 		}
+		// 增加group共有的labels
 		for ln, lv := range tg.Labels {
 			if _, ok := tlset[ln]; !ok {
 				lbls = append(lbls, labels.Label{Name: string(ln), Value: string(lv)})
@@ -445,11 +463,14 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lset := labels.New(lbls...)
 
+		// 进行relabel
 		lbls, origLabels, err := populateLabels(lset, cfg)
 		if err != nil {
 			return nil, errors.Wrapf(err, "instance %d in group %s", i, tg)
 		}
 		if lbls != nil || origLabels != nil {
+			// 如果在被relabel之前或之后，有一个不为nil，则加入targets
+			// 一个target由自发现的label，加经过relabel处理后的labels，和cfg.Params组成
 			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
 		}
 	}

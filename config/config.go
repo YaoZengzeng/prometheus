@@ -370,8 +370,10 @@ type ScrapeConfig struct {
 	// 从targets抓取metrics时的HTTP资源路径
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
+	// 从targets抓取metrics使用的URL scheme
 	Scheme string `yaml:"scheme,omitempty"`
 	// More than this many samples post metric-relabelling will cause the scrape to fail.
+	// 超过SampleLimit的samples数目会导致scrape失败
 	SampleLimit uint `yaml:"sample_limit,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse

@@ -20,6 +20,7 @@ import (
 )
 
 // Pool is a bucketed pool for variably sized byte slices.
+// Pool是一个bucketed pool，用于可变大小的字节切片
 type Pool struct {
 	buckets []sync.Pool
 	sizes   []int

@@ -78,6 +78,7 @@ func ParseMetric(input string) (m labels.Labels, err error) {
 
 // ParseMetricSelector parses the provided textual metric selector into a list of
 // label matchers.
+// ParseMetricSelector把提供的textual metric selector转换为一系列的label matchers
 func ParseMetricSelector(input string) (m []*labels.Matcher, err error) {
 	p := newParser(input)
 	defer p.recover(&err)

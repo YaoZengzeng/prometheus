@@ -39,6 +39,7 @@ func GraphLinkForExpression(expr string) string {
 
 // SanitizeLabelName replaces anything that doesn't match
 // client_label.LabelNameRE with an underscore.
+// SantizeLabelName用下划线替换任何不匹配client_label.LabelNameRE
 func SanitizeLabelName(name string) string {
 	return invalidLabelCharRE.ReplaceAllString(name, "_")
 }

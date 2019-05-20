@@ -243,6 +243,7 @@ func (api *API) Register(r *route.Router) {
 	r.Del("/series", wrap(api.dropSeries))
 
 	r.Get("/targets", wrap(api.targets))
+	// 获取/targets/metadata的数据
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
 	r.Get("/alertmanagers", wrap(api.alertmanagers))
 
@@ -529,10 +530,13 @@ func (api *API) dropSeries(r *http.Request) apiFuncResult {
 }
 
 // Target has the information for one target.
+// Target有一个target的信息
 type Target struct {
 	// Labels before any processing.
+	// 在任何处理之前的labels
 	DiscoveredLabels map[string]string `json:"discoveredLabels"`
 	// Any labels that are added to this target and its metrics.
+	// 任何加到这个target以及它的metrics的labels
 	Labels map[string]string `json:"labels"`
 
 	ScrapeURL string `json:"scrapeUrl"`
@@ -584,6 +588,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 		res.ActiveTargets = append(res.ActiveTargets, &Target{
 			DiscoveredLabels: target.DiscoveredLabels().Map(),
 			Labels:           target.Labels().Map(),
+			// 组装抓取的url
 			ScrapeURL:        target.URL().String(),
 			LastError:        lastErrStr,
 			LastScrape:       target.LastScrape(),
@@ -610,6 +615,7 @@ func matchLabels(lset labels.Labels, matchers []*labels.Matcher) bool {
 
 func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 	limit := -1
+	// 获取limit
 	if s := r.FormValue("limit"); s != "" {
 		var err error
 		if limit, err = strconv.Atoi(s); err != nil {
@@ -622,22 +628,28 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
 
+	// 获取metric的名字
 	metric := r.FormValue("metric")
 
 	var res []metricMetadata
+	// 遍历所有的active targets
 	for _, tt := range api.targetRetriever.TargetsActive() {
 		for _, t := range tt {
 			if limit >= 0 && len(res) >= limit {
 				break
 			}
 			// Filter targets that don't satisfy the label matchers.
+			// 过滤不符合label matchers的targets
 			if !matchLabels(t.Labels(), matchers) {
 				continue
 			}
 			// If no metric is specified, get the full list for the target.
+			// 如果没有指定metric，则获取一系列的targets
 			if metric == "" {
+				// 遍历获取一个target的所有metrics
 				for _, md := range t.MetadataList() {
 					res = append(res, metricMetadata{
+						// metricMetadata中也包含target的各个labels
 						Target: t.Labels(),
 						Metric: md.Metric,
 						Type:   md.Type,
@@ -648,6 +660,7 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 				continue
 			}
 			// Get metadata for the specified metric.
+			// 否则获取指定的metric的metadata
 			if md, ok := t.Metadata(metric); ok {
 				res = append(res, metricMetadata{
 					Target: t.Labels(),

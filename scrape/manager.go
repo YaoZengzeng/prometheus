@@ -65,8 +65,10 @@ type Manager struct {
 	// 全局的jitterSeed seed用于在设置了HA的时候分布scrape workload
 	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.
 	mtxScrape     sync.Mutex // Guards the fields below.
+	// scrapeConfigs用job作为key，其实是配置文件中写明的配置
 	scrapeConfigs map[string]*config.ScrapeConfig
 	scrapePools   map[string]*scrapePool
+	// 全量的target集合
 	targetSets    map[string][]*targetgroup.Group
 
 	triggerReload chan struct{}
@@ -77,10 +79,12 @@ type Manager struct {
 // Run接收并且保存target set的更新并且触发scraping loops的重新加载
 // Reloading在后台发生因此并不会阻塞targets updates
 func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
+	// 生成一个goroutine进行reloader()
 	go m.reloader()
 	for {
 		select {
 		case ts := <-tsets:
+			// 用从channel中获取的target sets更新
 			m.updateTsets(ts)
 
 			select {
@@ -105,6 +109,7 @@ func (m *Manager) reloader() {
 			return
 		case <-ticker.C:
 			select {
+			// 至少五秒，触发一次reload
 			case <-m.triggerReload:
 				m.reload()
 			case <-m.graceShut:
@@ -117,11 +122,13 @@ func (m *Manager) reloader() {
 func (m *Manager) reload() {
 	m.mtxScrape.Lock()
 	var wg sync.WaitGroup
+	// 每个job对应一个scrape pool
 	for setName, groups := range m.targetSets {
 		// 如果targetSets在scrapePools中不存在对应的scrapePool，则创建之
 		if _, ok := m.scrapePools[setName]; !ok {
 			scrapeConfig, ok := m.scrapeConfigs[setName]
 			if !ok {
+				// 如果一个target set在scrape Pools和scrape Configs中都不存在，则直接跳过
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
@@ -148,6 +155,7 @@ func (m *Manager) reload() {
 }
 
 // setJitterSeed calculates a global jitterSeed per server relying on extra label set.
+// setJitterSeed依据extra label set为每个server计算global jitterSeed
 func (m *Manager) setJitterSeed(labels labels.Labels) error {
 	h := fnv.New64a()
 	hostname, err := getFqdn()
@@ -186,6 +194,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	c := make(map[string]*config.ScrapeConfig)
 	for _, scfg := range cfg.ScrapeConfigs {
+		// 用job name作为key
 		c[scfg.JobName] = scfg
 	}
 	m.scrapeConfigs = c
@@ -200,9 +209,11 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	// 遍历pools，如果pool不存在则停止并删除,如果配置发生改变的话，则重载
 	for name, sp := range m.scrapePools {
 		if cfg, ok := m.scrapeConfigs[name]; !ok {
+			// 如果scrape pool不在scrape config中就删除
 			sp.stop()
 			delete(m.scrapePools, name)
 		} else if !reflect.DeepEqual(sp.config, cfg) {
+			// 如果job依然存在，但是配置发生了改变，则调用sp.reload重新加载
 			err := sp.reload(cfg)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)
@@ -210,6 +221,8 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 			}
 		}
 	}
+
+	// 不创建新的scrap pool?
 
 	if failed {
 		return errors.New("failed to apply the new configuration")
@@ -231,6 +244,7 @@ func (m *Manager) TargetsAll() map[string][]*Target {
 }
 
 // TargetsActive returns the active targets currently being scraped.
+// TargetsActive返回当前正在被抓取的active targets
 func (m *Manager) TargetsActive() map[string][]*Target {
 	m.mtxScrape.Lock()
 	defer m.mtxScrape.Unlock()

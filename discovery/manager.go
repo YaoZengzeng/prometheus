@@ -105,6 +105,7 @@ type Discoverer interface {
 }
 
 type poolKey struct {
+	// poolKey由setName和providerName组成
 	setName  string
 	provider string
 }
@@ -130,8 +131,10 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 		discoverCancel: []context.CancelFunc{},
 		ctx:            ctx,
 		updatert:       5 * time.Second,
+		// triggerSend的大小为1
 		triggerSend:    make(chan struct{}, 1),
 	}
+	// 应用options
 	for _, option := range options {
 		option(mgr)
 	}
@@ -164,6 +167,8 @@ type Manager struct {
 	// 因此我们使用map[tg.Source]*targetgroup.Group来知道更新哪个group
 	targets map[poolKey]map[string]*targetgroup.Group
 	// providers keeps track of SD providers.
+	// providers用于追踪SD providers
+	// provider中包含了Discoverer接口
 	providers []*provider
 	// The sync channel sends the updates as a map where the key is the job value from the scrape config.
 	// sync channel将更新作为一个map发送，其中key是scrape config中的job value
@@ -171,6 +176,7 @@ type Manager struct {
 
 	// How long to wait before sending updates to the channel. The variable
 	// should only be modified in unit tests.
+	// 在向channel发送updates之前等待的时间
 	updatert time.Duration
 
 	// The triggerSend channel signals to the manager that new updates have been received from providers.
@@ -179,6 +185,7 @@ type Manager struct {
 }
 
 // Run starts the background processing
+// Run启动后台处理
 func (m *Manager) Run() error {
 	go m.sender()
 	for range m.ctx.Done() {
@@ -200,17 +207,21 @@ func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) e
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	// setName其实对应的就是jobName
 	for pk := range m.targets {
+		// 如果不在cfg中的就标记删除
 		if _, ok := cfg[pk.setName]; !ok {
 			discoveredTargets.DeleteLabelValues(m.name, pk.setName)
 		}
 	}
+	// 当重新应用config时，调用m.cancelDiscoverers()
 	m.cancelDiscoverers()
 	for name, scfg := range cfg {
 		// 注册providers
 		m.registerProviders(scfg, name)
 		discoveredTargets.WithLabelValues(m.name, name).Set(0)
 	}
+	// 启动各个provider
 	for _, prov := range m.providers {
 		m.startProvider(m.ctx, prov)
 	}
@@ -232,10 +243,13 @@ func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker D
 func (m *Manager) startProvider(ctx context.Context, p *provider) {
 	level.Debug(m.logger).Log("msg", "Starting provider", "provider", p.name, "subs", fmt.Sprintf("%v", p.subs))
 	ctx, cancel := context.WithCancel(ctx)
+	// updates是发送[]*targetgroup.Group的管道
 	updates := make(chan []*targetgroup.Group)
 
+	// 收集discoverCancel
 	m.discoverCancel = append(m.discoverCancel, cancel)
 
+	// 运行discoverer
 	go p.d.Run(ctx, updates)
 	go m.updater(ctx, p, updates)
 }
@@ -248,15 +262,19 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 		case tgs, ok := <-updates:
 			receivedUpdates.WithLabelValues(m.name).Inc()
 			if !ok {
+				// channel关闭了，则返回
 				level.Debug(m.logger).Log("msg", "discoverer channel closed", "provider", p.name)
 				return
 			}
 
 			for _, s := range p.subs {
+				// setName和对应的provider Name构成一个group
+				// 都是全量推送的
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
 			}
 
 			select {
+			// 触发发送
 			case m.triggerSend <- struct{}{}:
 			default:
 			}
@@ -281,8 +299,10 @@ func (m *Manager) sender() {
 				case m.syncCh <- m.allGroups():
 				default:
 					delayedUpdates.WithLabelValues(m.name).Inc()
+					// discovery receiver的channel已经满了，因此会在下一个周期触发
 					level.Debug(m.logger).Log("msg", "discovery receiver's channel was full so will retry the next cycle")
 					select {
+					// 如果m.syncCh当前满了，仍然要给m.triggerSend填满，从而在下一个循环能够马上再次向m.syncCh发送最新的groups
 					case m.triggerSend <- struct{}{}:
 					default:
 					}
@@ -297,6 +317,7 @@ func (m *Manager) cancelDiscoverers() {
 	for _, c := range m.discoverCancel {
 		c()
 	}
+	// 重置m.targets，m.providers以及m.discoverCancel
 	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
 	m.providers = nil
 	m.discoverCancel = nil
@@ -308,9 +329,11 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 
 	for _, tg := range tgs {
 		if tg != nil { // Some Discoverers send nil target group so need to check for it to avoid panics.
+			// 有些Discoverer发送nil target group，因此需要检查，防止panic
 			if _, ok := m.targets[poolKey]; !ok {
 				m.targets[poolKey] = make(map[string]*targetgroup.Group)
 			}
+			// 对于pod来说，一个target group代表了一个pod，貌似并没有删除pod的过程
 			m.targets[poolKey][tg.Source] = tg
 		}
 	}
@@ -323,9 +346,12 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	tSets := map[string][]*targetgroup.Group{}
 	for pkey, tsets := range m.targets {
 		var n int
+		// 遍历map[string]*targetgroup.Group
 		for _, tg := range tsets {
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
 			// to signal that it needs to stop all scrape loops for this target set.
+			// 即使target group 'tg'为空，我们也要将它发送给'Scrape manager'，用于通知它停止这个target set的所有scrape loops
+			// 感觉会有重复的target?
 			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
 			n += len(tg.Targets)
 		}
@@ -337,8 +363,10 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setName string) {
 	var added bool
 	add := func(cfg interface{}, newDiscoverer func() (Discoverer, error)) {
+		// t是config的类型
 		t := reflect.TypeOf(cfg).String()
 		for _, p := range m.providers {
+			// 如果cf和已经存在的provider的配置一样
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
 				added = true
@@ -346,6 +374,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 			}
 		}
 
+		// 同样的配置用同一个discoverer进行抓取
 		// 创建新的discoverer
 		d, err := newDiscoverer()
 		if err != nil {
@@ -433,8 +462,11 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		// Add an empty target group to force the refresh of the corresponding
 		// scrape pool and to notify the receiver that this target set has no
 		// current targets.
+		// 增加一个空的target group用于强行刷新对应的scrape pool并且告诉receiver，这个target set
+		// 当前没有targets
 		// It can happen because the combined set of SD configurations is empty
 		// or because we fail to instantiate all the SD configurations.
+		// 这可能在SD configurations都为空或者我们初始化所有的SD configurations失败的情况
 		add(setName, func() (Discoverer, error) {
 			return &StaticProvider{TargetGroups: []*targetgroup.Group{{}}}, nil
 		})
@@ -448,6 +480,7 @@ type StaticProvider struct {
 }
 
 // Run implements the Worker interface.
+// Run实现了Discoverer接口
 func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	// We still have to consider that the consumer exits right away in which case
 	// the context will be canceled.

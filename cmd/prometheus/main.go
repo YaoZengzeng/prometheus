@@ -432,8 +432,10 @@ func main() {
 		func(cfg *config.Config) error {
 			c := make(map[string]sd_config.ServiceDiscoveryConfig)
 			for _, v := range cfg.ScrapeConfigs {
+				// 遍历cfg.ScrapeConfigs，以job的名字作为key
 				c[v.JobName] = v.ServiceDiscoveryConfig
 			}
+			// discoveryManagerScrape应用Config
 			return discoveryManagerScrape.ApplyConfig(c)
 		},
 		notifierManager.ApplyConfig,
@@ -597,6 +599,7 @@ func main() {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
+						// 当web端收到reload请求时，调用reloadConfig
 						if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err

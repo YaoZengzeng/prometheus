@@ -41,6 +41,7 @@ type Pod struct {
 }
 
 // NewPod creates a new pod discovery.
+// NewPod创建一个新的pod discovery
 func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -78,6 +79,7 @@ func (p *Pod) enqueue(obj interface{}) {
 }
 
 // Run implements the Discoverer interface.
+// Run实现了Discoverer接口
 func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer p.queue.ShutDown()
 
@@ -92,6 +94,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}()
 
 	// Block until the target provider is explicitly canceled.
+	// 阻塞直到target provider被显式地canceled
 	<-ctx.Done()
 }
 
@@ -113,14 +116,17 @@ func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool 
 		return true
 	}
 	if !exists {
+		// 如果pod已经不存在了，则将相应的targetgroup.Group设置为空，即仅仅只有Source字段
 		send(ctx, p.logger, RolePod, ch, &targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
+	// 从队列中拿出keyObj，再从缓存中取出对象
 	eps, err := convertToPod(o)
 	if err != nil {
 		level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
 		return true
 	}
+	// p.buildPod根据eps创建一个target.Group
 	send(ctx, p.logger, RolePod, ch, p.buildPod(eps))
 	return true
 }
@@ -167,6 +173,7 @@ func GetControllerOf(controllee metav1.Object) *metav1.OwnerReference {
 
 func podLabels(pod *apiv1.Pod) model.LabelSet {
 	ls := model.LabelSet{
+		// 增加pod的name, ip, ready, phase, node name, host ip以及pod uid
 		podNameLabel:     lv(pod.ObjectMeta.Name),
 		podIPLabel:       lv(pod.Status.PodIP),
 		podReadyLabel:    podReady(pod),
@@ -186,6 +193,7 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 		}
 	}
 
+	// 在label中添加pod的labels和annotations
 	for k, v := range pod.Labels {
 		ln := strutil.SanitizeLabelName(k)
 		ls[model.LabelName(podLabelPrefix+ln)] = lv(v)
@@ -202,23 +210,28 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 }
 
 func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
+	// 根据pod创建target group
 	tg := &targetgroup.Group{
 		Source: podSource(pod),
 	}
 	// PodIP can be empty when a pod is starting or has been evicted.
+	// 当pod正在启动或者已经被驱逐的时候，PodIP可能为空
 	if len(pod.Status.PodIP) == 0 {
 		return tg
 	}
 
+	// 获取pod的一系列labels
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
 	for _, c := range pod.Spec.Containers {
 		// If no ports are defined for the container, create an anonymous
 		// target per container.
+		// 如果容器没有定义ports，为每个容器创建匿名的target
 		if len(c.Ports) == 0 {
 			// We don't have a port so we just set the address label to the pod IP.
 			// The user has to add a port manually.
+			// 我们没有port，因此将address label设置为pod IP，用户需要手动添加port
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:    lv(pod.Status.PodIP),
 				podContainerNameLabel: lv(c.Name),
@@ -226,6 +239,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			continue
 		}
 		// Otherwise create one target for each container/port combination.
+		// 否则，为每个container/port的组合创建一个target
 		for _, port := range c.Ports {
 			ports := strconv.FormatUint(uint64(port.ContainerPort), 10)
 			addr := net.JoinHostPort(pod.Status.PodIP, ports)

@@ -78,8 +78,10 @@ type HTTPClientConfig struct {
 	// 对于targets的HTTP基本身份验证凭据
 	BasicAuth *BasicAuth `yaml:"basic_auth,omitempty"`
 	// The bearer token for the targets.
+	// targets的bearer token
 	BearerToken Secret `yaml:"bearer_token,omitempty"`
 	// The bearer token file for the targets.
+	// targets的bearer toke file
 	BearerTokenFile string `yaml:"bearer_token_file,omitempty"`
 	// HTTP proxy server to use to connect to the targets.
 	// 用于连接targets的HTTP proxy server

@@ -186,12 +186,14 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
+// 一个ScrapeConfig创建一个ScrapePool
 func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
+	// 创建target的client
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
@@ -212,6 +214,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
+		// 创建Scrape Cache用于缓存数据
 		cache := newScrapeCache()
 		opts.target.setMetadataStore(cache)
 
@@ -359,13 +362,16 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	var all []*Target
 	sp.mtx.Lock()
 	sp.droppedTargets = []*Target{}
+	// 遍历targetgroup数组
 	for _, tg := range tgs {
+		// 根据scrape config对target进行过滤处理
 		targets, err := targetsFromGroup(tg, sp.config)
 		if err != nil {
 			level.Error(sp.logger).Log("msg", "creating targets failed", "err", err)
 			continue
 		}
 		for _, t := range targets {
+			// 如果经过处理后的target的labels数目大于0，则将它保留，否则如果labels数目小于等于0，而discovered labels大于0，则drop
 			if t.Labels().Len() > 0 {
 				all = append(all, t)
 			} else if t.DiscoveredLabels().Len() > 0 {
@@ -402,9 +408,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 		mrc             = sp.config.MetricRelabelConfigs
 	)
 
+	// 遍历targets
 	for _, t := range targets {
 		t := t
+		// 获取target的哈希值
 		hash := t.hash()
+		// 用uniqueTargets记录当前的targets
 		uniqueTargets[hash] = struct{}{}
 
 		if _, ok := sp.activeTargets[hash]; !ok {
@@ -424,6 +433,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 			sp.activeTargets[hash] = t
 			sp.loops[hash] = l
 
+			// 每个target对应一个scrape loop
 			go l.run(interval, timeout, nil)
 		} else {
 			// Need to keep the most updated labels information
@@ -557,6 +567,7 @@ var userAgentHeader = fmt.Sprintf("Prometheus/%s", version.Version)
 // 对目标进行scrape，抓取的数据写入w，返回内容的类型
 func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error) {
 	if s.req == nil {
+		// 创建一个http request并且保存在s.req中
 		req, err := http.NewRequest("GET", s.URL().String(), nil)
 		if err != nil {
 			return "", err
@@ -566,9 +577,12 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		req.Header.Set("User-Agent", userAgentHeader)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", fmt.Sprintf("%f", s.timeout.Seconds()))
 
+		// 直接写死s.req
 		s.req = req
 	}
 
+	// 调用s.client.Do
+	// 向target发起请求，获取时序数据
 	resp, err := s.client.Do(s.req.WithContext(ctx))
 	if err != nil {
 		return "", err
@@ -578,6 +592,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		resp.Body.Close()
 	}()
 
+	// 如果返回码不为http.StatusOK，则报错
 	if resp.StatusCode != http.StatusOK {
 		return "", errors.Errorf("server returned HTTP status %s", resp.Status)
 	}
@@ -591,6 +606,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		return resp.Header.Get("Content-Type"), nil
 	}
 
+	// 如果是用gzip进行了压缩
 	if s.gzipr == nil {
 		s.buf = bufio.NewReader(resp.Body)
 		s.gzipr, err = gzip.NewReader(s.buf)
@@ -598,12 +614,14 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 			return "", err
 		}
 	} else {
+		// 用resp.Body重置s.buf
 		s.buf.Reset(resp.Body)
 		if err = s.gzipr.Reset(s.buf); err != nil {
 			return "", err
 		}
 	}
 
+	// 从s.gzipr写入w
 	_, err = io.Copy(w, s.gzipr)
 	s.gzipr.Close()
 	if err != nil {
@@ -651,6 +669,7 @@ type scrapeLoop struct {
 // scrapeCache追踪exposed metric strings到label sets和storage references的映射
 // 另外，它也追踪scrapes之间的series的过期
 type scrapeCache struct {
+	// 当前scrape的次数
 	iter uint64 // Current scrape iteration.
 
 	// How many series and metadata entries there were at the last success.
@@ -676,6 +695,7 @@ type scrapeCache struct {
 }
 
 // metaEntry holds meta information about a metric.
+// metaEntry维护了一个metric的元数据信息
 type metaEntry struct {
 	lastIter uint64 // Last scrape iteration the entry was observed at.
 	typ      textparse.MetricType
@@ -850,6 +870,7 @@ func (c *scrapeCache) getMetadata(metric string) (MetricMetadata, bool) {
 	}, true
 }
 
+// 所有的元数据都存放在scrapeCache中
 func (c *scrapeCache) listMetadata() []MetricMetadata {
 	c.metaMtx.Lock()
 	defer c.metaMtx.Unlock()
@@ -1003,6 +1024,7 @@ mainLoop:
 			return
 		case <-sl.scrapeCtx.Done():
 			break mainLoop
+		// 每隔interval秒scrape一次
 		case <-ticker.C:
 		}
 	}
@@ -1094,8 +1116,10 @@ func (s samples) Less(i, j int) bool {
 	return s[i].t < s[j].t
 }
 
+// append一方面将抓取到的数据缓存到cache中，另一方面将数据写入tsdb
 func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total, added int, err error) {
 	var (
+		// 获取appender
 		app            = sl.appender()
 		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
@@ -1115,6 +1139,7 @@ loop:
 			break
 		}
 		switch et {
+		// 根据不同的类型设置类型，Help以及Entry的具体内容
 		case textparse.EntryType:
 			sl.cache.setType(p.Type())
 			continue
@@ -1144,6 +1169,7 @@ loop:
 		}
 		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
+			// 写入tsdb
 			switch err = app.AddFast(ce.lset, ce.ref, t, v); err {
 			case nil:
 				if tp == nil {
@@ -1263,6 +1289,7 @@ loop:
 		app.Rollback()
 		return total, added, err
 	}
+	// 写入tsdb
 	if err := app.Commit(); err != nil {
 		return total, added, err
 	}
@@ -1294,6 +1321,7 @@ func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, a
 
 	var health float64
 	if err == nil {
+		// 如果err为nil，则设置health为1
 		health = 1
 	}
 	app := sl.appender()
