@@ -67,6 +67,7 @@ var (
 type Role string
 
 // The valid options for Role.
+// Role的合法的资源对象为"node", "pod", "service", "endpoints", "ingress"
 const (
 	RoleNode     Role = "node"
 	RolePod      Role = "pod"
@@ -157,6 +158,7 @@ func init() {
 }
 
 // This is only for internal use.
+// discoverer只实现了Run接口
 type discoverer interface {
 	Run(ctx context.Context, up chan<- []*targetgroup.Group)
 }
@@ -166,6 +168,7 @@ type discoverer interface {
 // Discovery实现了discoverer接口，用于从Kubernetes中发现targets
 type Discovery struct {
 	sync.RWMutex
+	// kubernetes的Client接口
 	client             kubernetes.Interface
 	role               Role
 	logger             log.Logger

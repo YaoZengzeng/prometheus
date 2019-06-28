@@ -42,6 +42,7 @@ type ReadyStorage struct {
 }
 
 // Set the storage.
+// 设置storage
 func (s *ReadyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -57,6 +58,7 @@ func (s *ReadyStorage) Get() *tsdb.DB {
 	return nil
 }
 
+// get方法获取adapter
 func (s *ReadyStorage) get() *adapter {
 	s.mtx.RLock()
 	x := s.a

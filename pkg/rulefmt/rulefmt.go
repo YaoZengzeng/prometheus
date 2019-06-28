@@ -84,6 +84,7 @@ func (g *RuleGroups) Validate() (errs []error) {
 }
 
 // RuleGroup is a list of sequentially evaluated recording and alerting rules.
+// RuleGroup是一系列顺序评估的recording和alerting rules
 type RuleGroup struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
@@ -91,6 +92,7 @@ type RuleGroup struct {
 }
 
 // Rule describes an alerting or recording rule.
+// Rule描述一个alerting或者recording rule
 type Rule struct {
 	Record      string            `yaml:"record,omitempty"`
 	Alert       string            `yaml:"alert,omitempty"`

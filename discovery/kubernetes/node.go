@@ -178,6 +178,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 		level.Warn(n.logger).Log("msg", "No node address found", "err", err)
 		return nil
 	}
+	// 端口为Kubelet的端口
 	addr = net.JoinHostPort(addr, strconv.FormatInt(int64(node.Status.DaemonEndpoints.KubeletEndpoint.Port), 10))
 
 	t := model.LabelSet{
@@ -195,6 +196,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 }
 
 // nodeAddresses returns the provided node's address, based on the priority:
+// nodeAddresses返回给定node的地址，基于以下的优先级：
 // 1. NodeInternalIP
 // 2. NodeExternalIP
 // 3. NodeLegacyHostIP

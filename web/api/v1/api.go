@@ -304,6 +304,7 @@ func (api *API) query(r *http.Request) apiFuncResult {
 	}
 
 	// 检测语句是否正常
+	// 构建即时查询引擎
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
 	if err != nil {
 		err = errors.Wrapf(err, "invalid parameter 'query'")
@@ -489,6 +490,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 
 	var matcherSets [][]*labels.Matcher
 	for _, s := range r.Form["match[]"] {
+		// 从"match[]"中解析出metric selector
 		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {
 			return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
@@ -505,6 +507,7 @@ func (api *API) series(r *http.Request) apiFuncResult {
 	var sets []storage.SeriesSet
 	var warnings storage.Warnings
 	for _, mset := range matcherSets {
+		// 调用Select，收集series sets
 		s, wrn, err := q.Select(nil, mset...) //TODO
 		warnings = append(warnings, wrn...)
 		if err != nil {
@@ -547,6 +550,7 @@ type Target struct {
 }
 
 // DroppedTarget has the information for one target that was dropped during relabelling.
+// DroppedTarget包含了在relabelling的过程中被丢弃的target的信息
 type DroppedTarget struct {
 	// Labels before any processing.
 	DiscoveredLabels map[string]string `json:"discoveredLabels"`

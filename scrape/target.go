@@ -35,6 +35,7 @@ import (
 )
 
 // TargetHealth describes the health state of a target.
+// TargetHealth描述了一个target的健康状况
 type TargetHealth string
 
 // The possible health states of a target based on the last performed scrape.
@@ -448,6 +449,7 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 	targets := make([]*Target, 0, len(tg.Targets))
 
 	for i, tlset := range tg.Targets {
+		// 一个target的labels包含所在target group的公共labels以及其独有的label set
 		lbls := make([]labels.Label, 0, len(tlset)+len(tg.Labels))
 
 		// 添加某个target特定的labels

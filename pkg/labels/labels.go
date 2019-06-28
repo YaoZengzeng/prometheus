@@ -65,6 +65,7 @@ func (ls Labels) String() string {
 }
 
 // MarshalJSON implements json.Marshaler.
+// MarshalJSON实现了json.Marshaler
 func (ls Labels) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ls.Map())
 }
@@ -213,6 +214,7 @@ func Equal(ls, o Labels) bool {
 }
 
 // Map returns a string map of the labels.
+// Map遍历ls中的各个labels，将label的名字作为key，Value作为value
 func (ls Labels) Map() map[string]string {
 	m := make(map[string]string, len(ls))
 	for _, l := range ls {

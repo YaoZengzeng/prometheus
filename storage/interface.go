@@ -33,6 +33,7 @@ var (
 // Storage摄取并且管理samples，有着各种各样的indexes
 // 所有的方法都是线程安全的，Storage实现了storage.SampleAppender
 type Storage interface {
+	// Queryable返回一个Querier
 	Queryable
 
 	// StartTime returns the oldest timestamp stored in the storage.
@@ -124,7 +125,7 @@ type SeriesSet interface {
 // Series代表单个的time series
 type Series interface {
 	// Labels returns the complete set of labels identifying the series.
-	// Labels返回标识这个sereis的完整的labels
+	// Labels返回标识这个series的完整的labels
 	Labels() labels.Labels
 
 	// Iterator returns a new iterator of the data of the series.

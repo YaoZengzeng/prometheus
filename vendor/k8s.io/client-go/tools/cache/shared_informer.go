@@ -40,6 +40,7 @@ import (
 // has advantages over the broadcaster since it allows us to share a common cache across many
 // controllers. Extending the broadcaster would have required us keep duplicate caches for each
 // watch.
+// SharedInformer有一个共享的data cache，它能够分发cache变更的通知到多个通过AddEventHandler注册的多个listener
 type SharedInformer interface {
 	// AddEventHandler adds an event handler to the shared informer using the shared informer's resync
 	// period.  Events to a single handler are delivered sequentially, but there is no coordination
@@ -56,6 +57,7 @@ type SharedInformer interface {
 	// Run starts the shared informer, which will be stopped when stopCh is closed.
 	Run(stopCh <-chan struct{})
 	// HasSynced returns true if the shared informer's store has synced.
+	// HasSynced返回true，如果shared informer的store已经同步了
 	HasSynced() bool
 	// LastSyncResourceVersion is the resource version observed when last synced with the underlying
 	// store. The value returned is not synchronized with access to the underlying store and is not
@@ -71,6 +73,7 @@ type SharedIndexInformer interface {
 }
 
 // NewSharedInformer creates a new instance for the listwatcher.
+// NewSharedInformer创建一个新的实例用于listwatcher
 func NewSharedInformer(lw ListerWatcher, objType runtime.Object, resyncPeriod time.Duration) SharedInformer {
 	return NewSharedIndexInformer(lw, objType, resyncPeriod, Indexers{})
 }

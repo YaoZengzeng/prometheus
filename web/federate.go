@@ -54,6 +54,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var matcherSets [][]*labels.Matcher
 	for _, s := range req.Form["match[]"] {
+		// 解析metric selectors
 		matchers, err := promql.ParseMetricSelector(s)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -70,6 +71,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	)
 	w.Header().Set("Content-Type", string(format))
 
+	// 获取storage的querier
 	q, err := h.storage.Querier(req.Context(), mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
@@ -100,6 +102,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		sets = append(sets, s)
 	}
 
+	// 整合storage.SeriesSet
 	set := storage.NewMergeSeriesSet(sets, nil)
 	it := storage.NewBuffer(int64(promql.LookbackDelta / 1e6))
 	for set.Next() {
@@ -129,6 +132,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			continue
 		}
 
+		// 增加sample
 		vec = append(vec, promql.Sample{
 			Metric: s.Labels(),
 			Point:  promql.Point{T: t, V: v},

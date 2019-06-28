@@ -57,6 +57,7 @@ type Parser interface {
 }
 
 // New returns a new parser of the byte slice.
+// New返回byte slice的一个新的parser
 func New(b []byte, contentType string) Parser {
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err == nil && mediaType == "application/openmetrics-text" {

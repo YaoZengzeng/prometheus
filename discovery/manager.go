@@ -44,6 +44,7 @@ var (
 	failedConfigs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_configs_failed_total",
+			// 加载失败的service discovery configurations的数目
 			Help: "Total number of service discovery configurations that failed to load.",
 		},
 		[]string{"name"},
@@ -51,12 +52,14 @@ var (
 	discoveredTargets = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "prometheus_sd_discovered_targets",
+			// 当前的discovered targets的数目
 			Help: "Current number of discovered targets.",
 		},
 		[]string{"name", "config"},
 	)
 	receivedUpdates = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
+			// 从SD providers收到的update events的数目
 			Name: "prometheus_sd_received_updates_total",
 			Help: "Total number of update events received from the SD providers.",
 		},
@@ -65,6 +68,7 @@ var (
 	delayedUpdates = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_updates_delayed_total",
+			// 不能立即发送的update events的数目
 			Help: "Total number of update events that couldn't be sent immediately.",
 		},
 		[]string{"name"},
@@ -72,6 +76,7 @@ var (
 	sentUpdates = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_updates_total",
+			// 发送给SD consumers的update events的数目
 			Help: "Total number of update events sent to the SD consumers.",
 		},
 		[]string{"name"},
@@ -176,7 +181,7 @@ type Manager struct {
 
 	// How long to wait before sending updates to the channel. The variable
 	// should only be modified in unit tests.
-	// 在向channel发送updates之前等待的时间
+	// 在向channel发送updates之前等待的时间，只有在unit tests的时候才修改这个值
 	updatert time.Duration
 
 	// The triggerSend channel signals to the manager that new updates have been received from providers.
@@ -393,6 +398,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 		added = true
 	}
 
+	// 遍历各种SD config，增加provider
 	for _, c := range cfg.DNSSDConfigs {
 		add(c, func() (Discoverer, error) {
 			return dns.NewDiscovery(*c, log.With(m.logger, "discovery", "dns")), nil
@@ -455,6 +461,7 @@ func (m *Manager) registerProviders(cfg sd_config.ServiceDiscoveryConfig, setNam
 	}
 	if len(cfg.StaticConfigs) > 0 {
 		add(setName, func() (Discoverer, error) {
+			// 直接创建Static Provider并添加
 			return &StaticProvider{TargetGroups: cfg.StaticConfigs}, nil
 		})
 	}

@@ -87,6 +87,8 @@ type Options struct {
 // call to Commit or Rollback and must not be reused afterwards.
 //
 // Operations on the Appender interface are not goroutine-safe.
+// Appender允许appending批量的data，它必须通过调用Commit或者Rollback完成并且之后不能重用
+// Appender接口中的方法不是线程安全的
 type Appender interface {
 	// Add adds a sample pair for the given series. A reference number is
 	// returned which can be used to add further samples in the same or later
@@ -95,21 +97,30 @@ type Appender interface {
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
+	// Add为给定的series增加一个sample pair，它会返回一个reference number，它可以用于在当前
+	// 或者以后的transactions中增加之后的samples
+	// 返回的reference numbers是短暂的，可能在任何一次调用AddFast()的时候被拒绝
+	// 通过Add()增加一个新的sample会返回一个新的reference number
 	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
 	// AddFast adds a sample pair for the referenced series. It is generally
 	// faster than adding a sample by providing its full label set.
+	// AddFast通过referenced series增加一个sample pair，它通常比提供全量的label set加入
+	// 一个sample更快
 	AddFast(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
+	// Commit提交收集到的samples并且移除batch
 	Commit() error
 
 	// Rollback rolls back all modifications made in the appender so far.
+	// Rollback回滚当前对appender做的修改
 	Rollback() error
 }
 
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
+// DB处理对于落到一个seriedb的hashed partition的time series的读写
 type DB struct {
 	dir   string
 	lockf fileutil.Releaser
@@ -139,6 +150,7 @@ type DB struct {
 	autoCompact    bool
 
 	// Cancel a running compaction when a shutdown is initiated.
+	// 取消一个正在运行的压缩，当初始化了一个shutdown的时候
 	compactCancel context.CancelFunc
 }
 
@@ -242,6 +254,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 }
 
 // Open returns a new DB in the given directory.
+// Open基于给定目录返回一个新的DB
 func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db *DB, err error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
@@ -257,6 +270,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		return nil, err
 	}
 	// Migrate old WAL if one exists.
+	// 如果存在老的WAL，则将它合并
 	if err := MigrateWAL(l, filepath.Join(dir, "wal")); err != nil {
 		return nil, errors.Wrap(err, "migrate WAL")
 	}

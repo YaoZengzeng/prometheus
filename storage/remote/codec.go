@@ -164,6 +164,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 }
 
 // FromQueryResult unpacks a QueryResult proto.
+// FromQueryResult会unpacks一个QueryResult proto
 func FromQueryResult(res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
@@ -226,6 +227,7 @@ func (c *concreteSeriesSet) Err() error {
 }
 
 // concreteSeries implements storage.Series.
+// concreteSeries实现了storage.Series
 type concreteSeries struct {
 	labels  labels.Labels
 	samples []prompb.Sample

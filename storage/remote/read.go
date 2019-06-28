@@ -60,6 +60,7 @@ type querier struct {
 
 // Select implements storage.Querier and uses the given matchers to read series
 // sets from the Client.
+// Select实现了storage.Querier并且使用给定的matchers从Client读取series sets
 func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (storage.SeriesSet, storage.Warnings, error) {
 	query, err := ToQuery(q.mint, q.maxt, matchers, p)
 	if err != nil {

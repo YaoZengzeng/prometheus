@@ -89,6 +89,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	go func() {
+		// 对队列进行处理
 		for p.process(ctx, ch) {
 		}
 	}()
@@ -141,8 +142,10 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 }
 
 const (
+	// metaLabelPrefix为"__meta_kubernetes_"
 	podNameLabel                  = metaLabelPrefix + "pod_name"
 	podIPLabel                    = metaLabelPrefix + "pod_ip"
+	// "__meta_kubernetes_pod_container_name"
 	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
 	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
 	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
@@ -196,12 +199,14 @@ func podLabels(pod *apiv1.Pod) model.LabelSet {
 	// 在label中添加pod的labels和annotations
 	for k, v := range pod.Labels {
 		ln := strutil.SanitizeLabelName(k)
+		// podLabelPrefix为"__meta_kubernetes_pod_label_"
 		ls[model.LabelName(podLabelPrefix+ln)] = lv(v)
 		ls[model.LabelName(podLabelPresentPrefix+ln)] = presentValue
 	}
 
 	for k, v := range pod.Annotations {
 		ln := strutil.SanitizeLabelName(k)
+		// podAnnotationPrefix为"__meta_kubernetes_pod_annotation_"
 		ls[model.LabelName(podAnnotationPrefix+ln)] = lv(v)
 		ls[model.LabelName(podAnnotationPresentPrefix+ln)] = presentValue
 	}
@@ -222,6 +227,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 
 	// 获取pod的一系列labels
 	tg.Labels = podLabels(pod)
+	// 设置"__meta_kubernetes_namespace"为pod的namespace
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 
 	for _, c := range pod.Spec.Containers {
@@ -234,6 +240,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			// 我们没有port，因此将address label设置为pod IP，用户需要手动添加port
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:    lv(pod.Status.PodIP),
+				// "__meta_kubernetes_pod_container_name"
 				podContainerNameLabel: lv(c.Name),
 			})
 			continue
@@ -247,7 +254,9 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:            lv(addr),
 				podContainerNameLabel:         lv(c.Name),
+				// "__meta_kubernetes_pod_container_port_number"
 				podContainerPortNumberLabel:   lv(ports),
+				// "__meta_kubernetes_pod_container_port_name"
 				podContainerPortNameLabel:     lv(port.Name),
 				podContainerPortProtocolLabel: lv(string(port.Protocol)),
 			})

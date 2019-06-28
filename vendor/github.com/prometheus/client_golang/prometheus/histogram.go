@@ -146,6 +146,8 @@ type HistogramOpts struct {
 	// values must be sorted in strictly increasing order. There is no need
 	// to add a highest bucket with +Inf bound, it will be added
 	// implicitly. The default value is DefBuckets.
+	// Buckets定义了buckets，observations会据此计数，slice中的每个元素都是一个bucket的上界
+	// 其中的值必须按照升序排列，不需要定义+Inf这个最大的bucket，因为它默认会被添加，默认值为DefBuckets
 	Buckets []float64
 }
 

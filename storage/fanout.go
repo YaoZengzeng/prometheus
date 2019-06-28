@@ -370,6 +370,7 @@ type mergeSeriesSet struct {
 
 // NewMergeSeriesSet returns a new series set that merges (deduplicates)
 // series returned by the input series sets when iterating.
+// NewMergeSeriesSet返回一个新的series set，它会在遍历input series sets的时候合并（去重）series
 func NewMergeSeriesSet(sets []SeriesSet, querier *mergeQuerier) SeriesSet {
 	if len(sets) == 1 {
 		return sets[0]

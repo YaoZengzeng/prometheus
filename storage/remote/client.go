@@ -152,6 +152,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
+	// 调用http client发送请求
 	httpResp, err := c.client.Do(httpReq.WithContext(ctx))
 	if err != nil {
 		return nil, errors.Wrap(err, "error sending request")
@@ -180,6 +181,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, errors.Wrap(err, "unable to unmarshal response body")
 	}
 
+	// 请求的Results的数目必须和请求的Queries的数目相等
 	if len(resp.Results) != len(req.Queries) {
 		return nil, errors.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}

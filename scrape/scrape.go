@@ -400,6 +400,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 
 	var (
 		uniqueTargets   = map[uint64]struct{}{}
+		// interval是全局配置里的时间间隔
 		interval        = time.Duration(sp.config.ScrapeInterval)
 		timeout         = time.Duration(sp.config.ScrapeTimeout)
 		limit           = int(sp.config.SampleLimit)
@@ -523,6 +524,7 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 }
 
 // appender returns an appender for ingested samples from the target.
+// appender返回一个appender用于从target摄取samples
 func appender(app storage.Appender, limit int) storage.Appender {
 	app = &timeLimitAppender{
 		Appender: app,
@@ -588,12 +590,14 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		return "", err
 	}
 	defer func() {
+		// 直接把resp.Body丢弃
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	// 如果返回码不为http.StatusOK，则报错
 	if resp.StatusCode != http.StatusOK {
+		// 发生错误的话，Content-Type为空
 		return "", errors.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
@@ -608,6 +612,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 
 	// 如果是用gzip进行了压缩
 	if s.gzipr == nil {
+		// 创建gzip reader
 		s.buf = bufio.NewReader(resp.Body)
 		s.gzipr, err = gzip.NewReader(s.buf)
 		if err != nil {
@@ -984,7 +989,9 @@ mainLoop:
 				sl.lastScrapeSize = len(b)
 			}
 		} else {
+			// 直接抓取失败
 			level.Debug(sl.l).Log("msg", "Scrape failed", "err", scrapeErr.Error())
+			// 默认的errc直接为nil
 			if errc != nil {
 				errc <- scrapeErr
 			}
@@ -1134,6 +1141,7 @@ loop:
 		var et textparse.Entry
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
+				// 如果遇到io.EOF，直接返回
 				err = nil
 			}
 			break
@@ -1169,6 +1177,7 @@ loop:
 		}
 		ce, ok := sl.cache.get(yoloString(met))
 		if ok {
+			// 如果已经在缓存中存在了
 			// 写入tsdb
 			switch err = app.AddFast(ce.lset, ce.ref, t, v); err {
 			case nil:
@@ -1203,6 +1212,7 @@ loop:
 			}
 		}
 		if !ok {
+			// 如果在缓存中不存在，则添加
 			var lset labels.Labels
 
 			mets := p.Metric(&lset)
@@ -1296,6 +1306,8 @@ loop:
 
 	// Only perform cache cleaning if the scrape was not empty.
 	// An empty scrape (usually) is used to indicate a failed scrape.
+	// 只有在scrape不为空的时候，执行cache cleaning
+	// 一个空的scrape通常意味着一个failed scrape
 	sl.cache.iterDone(len(b) > 0)
 
 	return total, added, nil

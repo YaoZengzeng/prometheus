@@ -692,6 +692,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 // Manager管理recording并且alerting rules
 type Manager struct {
 	opts     *ManagerOptions
+	// 一系列rule groups
 	groups   map[string]*Group
 	mtx      sync.RWMutex
 	block    chan struct{}
@@ -777,6 +778,7 @@ func (m *Manager) Update(interval time.Duration, files []string) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
+	// 从文件中加载rule groups
 	groups, errs := m.LoadGroups(interval, files...)
 	if errs != nil {
 		for _, e := range errs {
@@ -858,6 +860,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 
 				if r.Alert != "" {
 					// 如果Alert字段不为空，则构建alerting rule
+					// Alert字段为rule的名字
 					rules = append(rules, NewAlertingRule(
 						r.Alert,
 						expr,
@@ -885,6 +888,7 @@ func (m *Manager) LoadGroups(interval time.Duration, filenames ...string) (map[s
 }
 
 // Group names need not be unique across filenames.
+// Group names不需要在全部文件中都唯一
 func groupKey(name, file string) string {
 	return name + ";" + file
 }

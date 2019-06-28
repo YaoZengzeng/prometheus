@@ -133,6 +133,7 @@ var (
 type Config struct {
 	GlobalConfig   GlobalConfig    `yaml:"global"`
 	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
+	// 一系列的rule files
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 

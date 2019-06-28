@@ -466,6 +466,7 @@ func main() {
 				}
 				files = append(files, fs...)
 			}
+			// 用匹配的所有文件更新ruleManager
 			return ruleManager.Update(time.Duration(cfg.GlobalConfig.EvaluationInterval), files)
 		},
 	}
@@ -855,6 +856,7 @@ type sender interface {
 }
 
 // sendAlerts implements the rules.NotifyFunc for a Notifier.
+// sendAlerts为一个Notifier实现了rule.NotifyFunc
 func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
 		var res []*notifier.Alert
