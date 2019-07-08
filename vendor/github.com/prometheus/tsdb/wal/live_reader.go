@@ -49,6 +49,7 @@ func NewLiveReader(logger log.Logger, r io.Reader) *LiveReader {
 // LiveReader reads WAL records from an io.Reader. It allows reading of WALs
 // that are still in the process of being written, and returns records as soon
 // as they can be read.
+// LiveReader从一个io.Reader中读取WAL records，这允许读取还在写入过程中的WALs，并且返回records，一旦它们能够被读取
 type LiveReader struct {
 	logger     log.Logger
 	rdr        io.Reader
@@ -56,8 +57,11 @@ type LiveReader struct {
 	rec        []byte
 	hdr        [recordHeaderSize]byte
 	buf        [pageSize]byte
+	// buf中下一次read开始的Index
 	readIndex  int   // Index in buf to start at for next read.
+	// buf中下一次write开始的Index
 	writeIndex int   // Index in buf to start at for next write.
+	// total时在调用Next()处理的字节总数
 	total      int64 // Total bytes processed during reading in calls to Next().
 	index      int   // Used to track partial records, should be 0 at the start of every new record.
 
@@ -67,6 +71,8 @@ type LiveReader struct {
 	// We sometime see records span page boundaries.  Should never happen, but it
 	// does.  Until we track down why, set permissive to true to tolerate it.
 	// NB the non-ive Reader implementation allows for this.
+	// 有时候我们能看到跨页的records，不应该发生，但是的确发生了
+	// 直到我们搞清楚为什么，将permissive设置为true来忍受它
 	permissive bool
 }
 
@@ -93,10 +99,14 @@ func (r *LiveReader) fillBuffer() (int, error) {
 }
 
 // Next returns true if Record() will contain a full record.
+// Next返回true，如果Record()会包含一个完整的record
 // If Next returns false, you should always checked the contents of Error().
 // Return false guarantees there are no more records if the segment is closed
 // and not corrupt, otherwise if Err() == io.EOF you should try again when more
 // data has been written.
+// 如果Next返回false，总是应该检查Error()的内容，
+// 返回false保证没有更多的records，如果segment被关闭并且没有corrupt，否则，如果Err()为io.EOF
+// 你应该再次尝试，当有新的数据被写入
 func (r *LiveReader) Next() bool {
 	for {
 		// If buildRecord returns a non-EOF error, its game up - the segment is

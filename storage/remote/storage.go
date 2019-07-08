@@ -96,6 +96,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 		if err != nil {
 			return err
 		}
+		// 为每一个Remote Write创建一个Queue Manager
 		newQueues = append(newQueues, NewQueueManager(
 			s.logger,
 			s.walDir,

@@ -237,6 +237,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 		retriedSamplesTotal:   retriedSamplesTotal.WithLabelValues(name),
 	}
 
+	// 创建一个WAL Watcher
 	t.watcher = NewWALWatcher(logger, name, t, walDir)
 	t.shards = t.newShards()
 
@@ -314,6 +315,7 @@ outer:
 // Start启动queue manager，发送samples到远程的storage，不要阻塞
 func (t *QueueManager) Start() {
 	t.shards.start(t.numShards)
+	// 启动wal watcher
 	t.watcher.Start()
 
 	t.wg.Add(2)

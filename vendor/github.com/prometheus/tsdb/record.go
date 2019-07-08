@@ -56,6 +56,7 @@ func (d *RecordDecoder) Type(rec []byte) RecordType {
 }
 
 // Series appends series in rec to the given slice.
+// Series将rec中的series扩展到给定的slice
 func (d *RecordDecoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 	dec := encoding.Decbuf{B: rec}
 
@@ -148,10 +149,13 @@ func (d *RecordDecoder) Tombstones(rec []byte, tstones []Stone) ([]Stone, error)
 
 // RecordEncoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
+// RecordEncoder用来编码series，sample以及tombstones records
+// 零值可以直接使用
 type RecordEncoder struct {
 }
 
 // Series appends the encoded series to b and returns the resulting slice.
+// Series将encoded series扩展到b并且返回resulting slice
 func (e *RecordEncoder) Series(series []RefSeries, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(RecordSeries))

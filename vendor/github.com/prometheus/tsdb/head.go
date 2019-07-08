@@ -56,6 +56,7 @@ var (
 )
 
 // Head handles reads and writes of time series data within a time window.
+// Head处理一个时间窗口内time series的reads以及writes
 type Head struct {
 	chunkRange int64
 	metrics    *headMetrics
@@ -64,11 +65,13 @@ type Head struct {
 	appendPool sync.Pool
 	bytesPool  sync.Pool
 
+	// 当前在header中min以及max的samples
 	minTime, maxTime int64 // Current min and max of the samples included in the head.
 	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     uint64
 
 	// All series addressable by their ID or hash.
+	// 所有的series通过ID或者hash进行寻址
 	series *stripeSeries
 
 	symMtx  sync.RWMutex
@@ -76,6 +79,7 @@ type Head struct {
 	values  map[string]stringset // label names to possible values
 
 	deletedMtx sync.Mutex
+	// 被删除的series，并且必须保持到的WAL segment
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
 	postings *index.MemPostings // postings lists for terms
@@ -113,14 +117,17 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	})
 	m.series = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_head_series",
+		// 存放在head block中的series的数目
 		Help: "Total number of series in the head block.",
 	})
 	m.seriesCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_series_created_total",
+		// 在head中创建的series的数目
 		Help: "Total number of series created in the head",
 	})
 	m.seriesRemoved = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_head_series_removed_total",
+		// 从head中移除的series的数目
 		Help: "Total number of series removed in the head",
 	})
 	m.seriesNotFound = prometheus.NewCounter(prometheus.CounterOpts{
@@ -220,6 +227,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 }
 
 // NewHead opens the head block in dir.
+// NewHead打开目录中的head block
 func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -247,6 +255,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 // processWALSamples adds a partition of samples it receives to the head and passes
 // them on to other workers.
 // Samples before the mint timestamp are discarded.
+// processWALSamples增加它接受到的一部分samples到head并且传递它们到其他的workers
 func (h *Head) processWALSamples(
 	minValidTime int64,
 	input <-chan []RefSample, output chan<- []RefSample,
@@ -320,6 +329,8 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
 	// read from the WAL are processed in order.
+	// 启动workers，每个worker处理series ID space中的一部分samples
+	// 它们通过一个ring of channels连接从而确保所有从WAL读取的sample batches被按序处理
 	var (
 		wg      sync.WaitGroup
 		n       = runtime.GOMAXPROCS(0)
@@ -350,10 +361,13 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 	defer allStones.Close()
 	for r.Next() {
 		series, samples, tstones = series[:0], samples[:0], tstones[:0]
+		// 获取record
 		rec := r.Record()
 
+		// 解码
 		switch dec.Type(rec) {
 		case RecordSeries:
+			// 此处占据了大量内存
 			series, err = dec.Series(rec, series)
 			if err != nil {
 				return &wal.CorruptionErr{
@@ -383,6 +397,7 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
 			// cause thousands of very large in flight buffers occupying large amounts
 			// of unused memory.
+			// 将samples切割为小于等于5000一组
 			for len(samples) > 0 {
 				m := 5000
 				if len(samples) < m {
@@ -457,11 +472,14 @@ func (h *Head) loadWAL(r *wal.Reader) error {
 }
 
 // Init loads data from the write ahead log and prepares the head for writes.
+// Init从wal加载数据并且准备用于写的head
 // It should be called before using an appender so that
 // limits the ingested samples to the head min valid time.
+// 它应该在使用appender之前被调用，因此将摄入的样本限制在head min valid time
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime = minValidTime
 	defer h.postings.EnsureOrder()
+	// 在加载了wal之后，移除过时的数据
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
 	if h.wal == nil {
@@ -469,6 +487,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	// Backfill the checkpoint first if it exists.
+	// 如果存在的话，回填checkpoint
 	dir, startFrom, err := LastCheckpoint(h.wal.Dir())
 	if err != nil && err != ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
@@ -482,6 +501,8 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
+		// checkpoint发生错误是一个非常严重的问题并且将需要用户介入
+		// 因为很少数据可以被恢复了
 		if err := h.loadWAL(wal.NewReader(sr)); err != nil {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
@@ -610,6 +631,8 @@ func (h *Head) Truncate(mint int64) (err error) {
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
 // Returns true if the initialization took an effect.
+// initTime用第一个timestamp初始化一个head，这只有全新的head并且WAL为空才需要被调用，
+// 返回true，如果初始化took an effect
 func (h *Head) initTime(t int64) (initialized bool) {
 	if !atomic.CompareAndSwapInt64(&h.minTime, math.MaxInt64, t) {
 		return false
@@ -648,6 +671,7 @@ func (h *rangeHead) MaxTime() int64 {
 
 // initAppender is a helper to initialize the time bounds of the head
 // upon the first sample it receives.
+// initAppender是一个helper用来初始化head的time bounds，当收到第一个sample时
 type initAppender struct {
 	app  Appender
 	head *Head
@@ -655,8 +679,10 @@ type initAppender struct {
 
 func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
 	if a.app != nil {
+		// a.app被初始化，则直接调用a.app.Add()
 		return a.app.Add(lset, t, v)
 	}
+	// 否则初始化head，并且将a.app设置为a.head.appender()
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
@@ -685,11 +711,13 @@ func (a *initAppender) Rollback() error {
 }
 
 // Appender returns a new Appender on the database.
+// Appender返回一个数据库的新的Appender
 func (h *Head) Appender() Appender {
 	h.metrics.activeAppenders.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
+	// head cache可能还没有一个起始点，init appender选择第一个appended timestamp作为base
 	if h.MinTime() == math.MaxInt64 {
 		return &initAppender{head: h}
 	}
@@ -701,6 +729,8 @@ func (h *Head) appender() *headAppender {
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
+		// 将minimum valid time设置为大于head min valid time或者comaction window
+		// 这可以放置在compaction window期间加入samples以确保防治竞争
 		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
@@ -743,6 +773,7 @@ func (h *Head) putBytesBuffer(b []byte) {
 
 type headAppender struct {
 	head         *Head
+	// 时间戳小于minValidTime都是不被允许的
 	minValidTime int64 // No samples below this timestamp are allowed.
 	mint, maxt   int64
 
@@ -757,6 +788,7 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {
+		// 如果series已经被创建，则直接扩展，用s.ref作为引用
 		a.series = append(a.series, RefSeries{
 			Ref:    s.ref,
 			Labels: lset,
@@ -803,6 +835,7 @@ func (a *headAppender) log() error {
 		return nil
 	}
 
+	// 获取head的buffer中的数据
 	buf := a.head.getBytesBuffer()
 	defer func() { a.head.putBytesBuffer(buf) }()
 
@@ -810,9 +843,11 @@ func (a *headAppender) log() error {
 	var enc RecordEncoder
 
 	if len(a.series) > 0 {
+		// 将a.series编码成records
 		rec = enc.Series(a.series, buf)
 		buf = rec[:0]
 
+		// 将series写入wal
 		if err := a.head.wal.Log(rec); err != nil {
 			return errors.Wrap(err, "log series")
 		}
@@ -821,6 +856,7 @@ func (a *headAppender) log() error {
 		rec = enc.Samples(a.samples, buf)
 		buf = rec[:0]
 
+		// 将samples写入wal
 		if err := a.head.wal.Log(rec); err != nil {
 			return errors.Wrap(err, "log samples")
 		}
@@ -832,6 +868,7 @@ func (a *headAppender) Commit() error {
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.putAppendBuffer(a.samples)
 
+	// 调用a.log()，写入WAL
 	if err := a.log(); err != nil {
 		return errors.Wrap(err, "write to WAL")
 	}
@@ -840,6 +877,7 @@ func (a *headAppender) Commit() error {
 
 	for _, s := range a.samples {
 		s.series.Lock()
+		// 将samples append到series中
 		ok, chunkCreated := s.series.append(s.T, s.V)
 		s.series.pendingCommit = false
 		s.series.Unlock()
@@ -1502,6 +1540,7 @@ type memSeries struct {
 
 	nextAt        int64 // Timestamp at which to cut the next chunk.
 	sampleBuf     [4]sample
+	// pendingCommit表示是否有samples等待被提交到这个series
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 
 	app chunkenc.Appender // Current appender for the chunk.

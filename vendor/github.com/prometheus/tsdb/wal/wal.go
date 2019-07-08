@@ -35,7 +35,9 @@ import (
 )
 
 const (
+	// 默认的SegmentSize是128MB
 	DefaultSegmentSize = 128 * 1024 * 1024 // 128 MB
+	// 默认的page size是32KB
 	pageSize           = 32 * 1024         // 32KB
 	recordHeaderSize   = 7
 )
@@ -64,6 +66,7 @@ func (p *page) full() bool {
 }
 
 // Segment represents a segment file.
+// Segment代表一个segment file
 type Segment struct {
 	*os.File
 	dir string
@@ -123,6 +126,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 }
 
 // CreateSegment creates a new segment k in dir.
+// CreateSegment在dir中创建一个新的segment k
 func CreateSegment(dir string, k int) (*Segment, error) {
 	f, err := os.OpenFile(SegmentName(dir, k), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -132,6 +136,7 @@ func CreateSegment(dir string, k int) (*Segment, error) {
 }
 
 // OpenReadSegment opens the segment with the given filename.
+// OpenReadSegment用给定的filename打开segment
 func OpenReadSegment(fn string) (*Segment, error) {
 	k, err := strconv.Atoi(filepath.Base(fn))
 	if err != nil {
@@ -148,9 +153,12 @@ func OpenReadSegment(fn string) (*Segment, error) {
 // It must be read from start to end once before logging new data.
 // If an error occurs during read, the repair procedure must be called
 // before it's safe to do further writes.
+// WAL在segment file例存储records，在记录新的数据之前，它必须从头到尾读取一遍
+// 如果在读取的时候发生了错误，必须先调用repair procedure，之后才能执行写操作
 //
 // Segments are written to in pages of 32KB, with records possibly split
 // across page boundaries.
+// Segements以32KB的大小被写入，records可能跨页，但是不会跨segment
 // Records are never split across segments to allow full segments to be
 // safely truncated. It also ensures that torn writes never corrupt records
 // beyond the most recent segment.
@@ -160,7 +168,9 @@ type WAL struct {
 	segmentSize int
 	mtx         sync.RWMutex
 	segment     *Segment // active segment
+	// donePages是已经写入segment的pages
 	donePages   int      // pages written to the segment
+	// page是当前活跃的page
 	page        *page    // active page
 	stopc       chan chan struct{}
 	actorc      chan func()
@@ -175,15 +185,19 @@ type WAL struct {
 
 // New returns a new WAL over the given directory.
 func New(logger log.Logger, reg prometheus.Registerer, dir string) (*WAL, error) {
+	// 默认的SegmentSize为128M
 	return NewSize(logger, reg, dir, DefaultSegmentSize)
 }
 
 // NewSize returns a new WAL over the given directory.
 // New segments are created with the specified size.
+// NewSize在给定目录返回一个新的WAL
+// 新的segments以给定的大小被创建
 func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int) (*WAL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
+	// 创建wal directory
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, errors.Wrap(err, "create dir")
 	}
@@ -228,6 +242,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	}
 	// Fresh dir, no segments yet.
 	if j == -1 {
+		// 如果返回的j为-1，表示是新的dir，还没有segments
 		segment, err := CreateSegment(w.dir, 0)
 		if err != nil {
 			return nil, err
@@ -237,6 +252,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 			return nil, err
 		}
 	} else {
+		// 否则打开已经存在的segment
 		segment, err := OpenWriteSegment(logger, w.dir, j)
 		if err != nil {
 			return nil, err
@@ -261,6 +277,7 @@ Loop:
 	for {
 		select {
 		case f := <-w.actorc:
+			// WAL的run就是运行从w.actorc获取的f
 			f()
 		case donec := <-w.stopc:
 			close(w.actorc)
@@ -408,6 +425,7 @@ func (w *WAL) setSegment(segment *Segment) error {
 	w.segment = segment
 
 	// Correctly initialize donePages.
+	// 正确地初始化donePages
 	stat, err := segment.Stat()
 	if err != nil {
 		return err
@@ -482,6 +500,8 @@ func (w *WAL) pagesPerSegment() int {
 
 // Log writes the records into the log.
 // Multiple records can be passed at once to reduce writes and increase throughput.
+// Log将records写入log
+// 多个records可以一次性写入用来降低写次数并且提高吞吐
 func (w *WAL) Log(recs ...[]byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
@@ -498,6 +518,8 @@ func (w *WAL) Log(recs ...[]byte) error {
 // log writes rec to the log and forces a flush of the current page if its
 // the final record of a batch, the record is bigger than the page size or
 // the current page is full.
+// log将rec写入log并且对当前页强制进行flush如果这是一批record里的最后一个，record大于page size
+// 或者当前的page已满
 func (w *WAL) log(rec []byte, final bool) error {
 	// If the record is too big to fit within the active page in the current
 	// segment, terminate the active segment and advance to the next one.
@@ -506,6 +528,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
 	if len(rec) > left {
+		// 如果剩余字节数不足，则新建一个segment
 		if err := w.nextSegment(); err != nil {
 			return err
 		}
@@ -559,6 +582,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 
 // Segments returns the range [first, n] of currently existing segments.
 // If no segments are found, first and n are -1.
+// Segments返回当前已经存在的segments的范围[first, n]，如果没有找到segments，则first和n为-1
 func (w *WAL) Segments() (first, last int, err error) {
 	refs, err := listSegments(w.dir)
 	if err != nil {
@@ -649,6 +673,7 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 			continue
 		}
 		if len(refs) > 0 && k > last+1 {
+			// segments不是连续的，则报错
 			return nil, errors.New("segments are not sequential")
 		}
 		refs = append(refs, segmentRef{name: fn, index: k})
@@ -661,18 +686,22 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 }
 
 // SegmentRange groups segments by the directory and the first and last index it includes.
+// SegmentRange根据目录将segments聚合并且包含第一个以及最后一个index
 type SegmentRange struct {
 	Dir         string
 	First, Last int
 }
 
 // NewSegmentsReader returns a new reader over all segments in the directory.
+// NewSegmentsReader返回目录中的所有segments的新的reader
 func NewSegmentsReader(dir string) (io.ReadCloser, error) {
 	return NewSegmentsRangeReader(SegmentRange{dir, -1, -1})
 }
 
 // NewSegmentsRangeReader returns a new reader over the given WAL segment ranges.
 // If first or last are -1, the range is open on the respective end.
+// NewSegmentsRangeReader返回一个新的reader在给定的WAL segment ranges上
+// 如果first或者last为-1，则range在对应的一端开放
 func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 	var segs []*Segment
 
@@ -704,6 +733,10 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 // corruption reporting.  We have to be careful not to increment curr too
 // early, as it is used by Reader.Err() to tell Repair which segment is corrupt.
 // As such we pad the end of non-page align segments with zeros.
+// segmentBufReader是一个缓存的reader用于读取多个pages
+// 主要的目的是我们可以追踪segment以及offset用于corruption reporting
+// 我们需要小心不能太早地增加curr，因为它会被Reader.Err()用于告诉Repair，哪个segment被corrupt了
+// 这样我们在非页对齐的segments用0填充
 type segmentBufReader struct {
 	buf  *bufio.Reader
 	segs []*Segment

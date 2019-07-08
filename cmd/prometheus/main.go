@@ -181,6 +181,7 @@ func main() {
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
+	// storage.tsdb.min-block-duration是内存中的监控数据进行持久化的时间间隔
 	a.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
 
@@ -188,6 +189,8 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period).").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
+	// storage.stdb.wal-segment-size是切分tsdb WAL segment file的大小，默认是100MB
+	// 小于0则表示不进行wal
 	a.Flag("storage.tsdb.wal-segment-size",
 		"Size at which to split the tsdb WAL segment files (e.g. 100MB)").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
@@ -333,6 +336,7 @@ func main() {
 
 	var (
 		// 创建localStorage和remoteStorage
+		// &tsdb.ReadyStorage{}实现了Storage接口，
 		localStorage  = &tsdb.ReadyStorage{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline))
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
@@ -680,6 +684,7 @@ func main() {
 				// 启动TSDB
 				level.Info(logger).Log("msg", "Starting TSDB ...")
 				if cfg.tsdb.WALSegmentSize != 0 {
+					// tsdb的wal segment大小必须设置在10MB到256MB之间
 					if cfg.tsdb.WALSegmentSize < 10*1024*1024 || cfg.tsdb.WALSegmentSize > 256*1024*1024 {
 						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
 					}
@@ -866,6 +871,7 @@ func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 				StartsAt:     alert.FiredAt,
 				Labels:       alert.Labels,
 				Annotations:  alert.Annotations,
+				// externalURL包含在GeneratorURL中
 				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
 			}
 			if !alert.ResolvedAt.IsZero() {
@@ -876,6 +882,7 @@ func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 			res = append(res, a)
 		}
 
+		// 发送alerts
 		if len(alerts) > 0 {
 			s.Send(res...)
 		}

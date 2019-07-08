@@ -34,6 +34,7 @@ import (
 )
 
 // Appendable returns an Appender.
+// Appendable返回一个Appender
 type Appendable interface {
 	Appender() (storage.Appender, error)
 }

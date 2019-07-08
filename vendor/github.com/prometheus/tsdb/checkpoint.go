@@ -42,18 +42,23 @@ type CheckpointStats struct {
 
 // LastCheckpoint returns the directory name and index of the most recent checkpoint.
 // If dir does not contain any checkpoints, ErrNotFound is returned.
+// LastCheckpoint返回directory name以及最近的checkpoint的index
+// 如果dir不包含任何checkpoints，返回ErrNotFound
 func LastCheckpoint(dir string) (string, int, error) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return "", 0, err
 	}
 	// Traverse list backwards since there may be multiple checkpoints left.
+	// 可能有多个checkpoints存在，反向遍历list
 	for i := len(files) - 1; i >= 0; i-- {
 		fi := files[i]
 
+		// 以"checkpoint."作为前缀
 		if !strings.HasPrefix(fi.Name(), checkpointPrefix) {
 			continue
 		}
+		// 不是目录也返回
 		if !fi.IsDir() {
 			return "", 0, errors.Errorf("checkpoint %s is not a directory", fi.Name())
 		}
@@ -61,6 +66,7 @@ func LastCheckpoint(dir string) (string, int, error) {
 		if err != nil {
 			continue
 		}
+		// idx为文件名去掉checkpointPrefix的前缀名
 		return filepath.Join(dir, fi.Name()), idx, nil
 	}
 	return "", 0, ErrNotFound

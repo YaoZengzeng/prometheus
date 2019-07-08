@@ -92,6 +92,7 @@ func readDirs(src string) ([]string, error) {
 }
 
 // ReadDir returns the filenames in the given directory in sorted order.
+// ReadDir返回给定目录经过排序的文件名
 func ReadDir(dirpath string) ([]string, error) {
 	dir, err := os.Open(dirpath)
 	if err != nil {

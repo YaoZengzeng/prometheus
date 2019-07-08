@@ -93,6 +93,7 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
 func (f *fanout) Appender() (Appender, error) {
+	// 首先获取primary的appender
 	primary, err := f.primary.Appender()
 	if err != nil {
 		return nil, err

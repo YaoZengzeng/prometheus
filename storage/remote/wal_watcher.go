@@ -87,6 +87,7 @@ func init() {
 	prometheus.MustRegister(watcherCurrentSegment)
 }
 
+// writeTo接口实现了Append，StoreSeries以及SeriesReset方法
 type writeTo interface {
 	Append([]tsdb.RefSample) bool
 	StoreSeries([]tsdb.RefSeries, int)
@@ -156,6 +157,7 @@ func (w *WALWatcher) loop() {
 	defer close(w.done)
 
 	// We may encourter failures processing the WAL; we should wait and retry.
+	// 我们可能会遇到处理WAL失败的情况，我们应该等待并且重试
 	for !isClosed(w.quit) {
 		w.startTime = timestamp.FromTime(time.Now())
 		if err := w.run(); err != nil {
@@ -171,12 +173,14 @@ func (w *WALWatcher) loop() {
 }
 
 func (w *WALWatcher) run() error {
+	// 找到最后一个segment
 	_, lastSegment, err := w.firstAndLast()
 	if err != nil {
 		return errors.Wrap(err, "wal.Segments")
 	}
 
 	// Backfill from the checkpoint first if it exists.
+	// 如果存在的话，首先获取checkpoint中的内容
 	lastCheckpoint, checkpointIndex, err := tsdb.LastCheckpoint(w.walDir)
 	if err != nil && err != tsdb.ErrNotFound {
 		return errors.Wrap(err, "tsdb.LastCheckpoint")
@@ -189,6 +193,7 @@ func (w *WALWatcher) run() error {
 	}
 	w.lastCheckpoint = lastCheckpoint
 
+	// 当前正在读取的Segment
 	currentSegment, err := w.findSegmentForIndex(checkpointIndex)
 	if err != nil {
 		return err
@@ -196,11 +201,14 @@ func (w *WALWatcher) run() error {
 
 	level.Debug(w.logger).Log("msg", "tailing WAL", "lastCheckpoint", lastCheckpoint, "checkpointIndex", checkpointIndex, "currentSegment", currentSegment, "lastSegment", lastSegment)
 	for !isClosed(w.quit) {
+		// 在metric设置当前正在读取的Segment
 		w.currentSegmentMetric.Set(float64(currentSegment))
 		level.Debug(w.logger).Log("msg", "processing segment", "currentSegment", currentSegment)
 
 		// On start, after reading the existing WAL for series records, we have a pointer to what is the latest segment.
 		// On subsequent calls to this function, currentSegment will have been incremented and we should open that segment.
+		// 在启动的时候，在读取了已经存在的WAL的series records之后，我们有一个pointer指向最后一个segment
+		// 之后再调用这个函数的时候，currentSegment会被增加并且我们应该打开那个segment
 		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil {
 			return err
 		}
@@ -210,6 +218,7 @@ func (w *WALWatcher) run() error {
 			return nil
 		}
 
+		// 不断更新currentSegment
 		currentSegment++
 	}
 
@@ -217,6 +226,7 @@ func (w *WALWatcher) run() error {
 }
 
 // findSegmentForIndex finds the first segment greater than or equal to index.
+// findSegmentForIndex找到大于等于index的第一个segment
 func (w *WALWatcher) findSegmentForIndex(index int) (int, error) {
 	refs, err := w.segments(w.walDir)
 	if err != nil {
@@ -255,6 +265,7 @@ func (w *WALWatcher) segments(dir string) ([]int, error) {
 	var refs []int
 	var last int
 	for _, fn := range files {
+		// 将文件名转换为数字
 		k, err := strconv.Atoi(fn)
 		if err != nil {
 			continue
@@ -265,6 +276,7 @@ func (w *WALWatcher) segments(dir string) ([]int, error) {
 		refs = append(refs, k)
 		last = k
 	}
+	// 从小到大对refs进行排序
 	sort.Ints(refs)
 
 	return refs, nil
@@ -273,6 +285,8 @@ func (w *WALWatcher) segments(dir string) ([]int, error) {
 // Use tail true to indicate that the reader is currently on a segment that is
 // actively being written to. If false, assume it's a full segment and we're
 // replaying it on start to cache the series records.
+// 当tail为true表明reader当前处于正在活跃写入的segment
+// 如果为false，则这是一个full segment并且我们在从头重放它用于缓存series records
 func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 	segment, err := wal.OpenReadSegment(wal.SegmentName(w.walDir, segmentNum))
 	if err != nil {
@@ -282,17 +296,21 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 
 	reader := wal.NewLiveReader(w.logger, segment)
 
+	// readPeriod为10ms
 	readTicker := time.NewTicker(readPeriod)
 	defer readTicker.Stop()
 
+	// checkpointPeriod为5s
 	checkpointTicker := time.NewTicker(checkpointPeriod)
 	defer checkpointTicker.Stop()
 
+	// segmentCheckPeriod为100ms
 	segmentTicker := time.NewTicker(segmentCheckPeriod)
 	defer segmentTicker.Stop()
 
 	// If we're replaying the segment we need to know the size of the file to know
 	// when to return from watch and move on to the next segment.
+	// 如果我们重放segment，我们需要知道文件的大小从而知道何时从watch返回并且转到下一个segment
 	size := int64(math.MaxInt64)
 	if !tail {
 		segmentTicker.Stop()
@@ -313,6 +331,8 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 			// Periodically check if there is a new checkpoint so we can garbage
 			// collect labels. As this is considered an optimisation, we ignore
 			// errors during checkpoint processing.
+			// 阶段性地检查是否有一个新的checkpoint，因此我们可以gc labels
+			// 因为这被认为是一个优化，我们忽略在checkpoint期间的错误
 			if err := w.garbageCollectSeries(segmentNum); err != nil {
 				level.Warn(w.logger).Log("msg", "error process checkpoint", "err", err)
 			}
@@ -324,19 +344,23 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 			}
 
 			// Check if new segments exists.
+			// 检查是否有新的segments存在
 			if last <= segmentNum {
 				continue
 			}
 
+			// last大于segmentNum了，表示segmentNum不是最新的了，因此可以一次性读完
 			err = w.readSegment(reader, segmentNum, tail)
 
 			// Ignore errors reading to end of segment whilst replaying the WAL.
+			// 重放WAL则直接返回错误
 			if !tail {
 				if err != nil && err != io.EOF {
 					level.Warn(w.logger).Log("msg", "ignoring error reading to end of segment, may have dropped data", "err", err)
 				} else if reader.Offset() != size {
 					level.Warn(w.logger).Log("msg", "expected to have read whole segment, may have dropped data", "segment", segmentNum, "read", reader.Offset(), "size", size)
 				}
+				// 不是tail就直接返回
 				return nil
 			}
 
@@ -351,6 +375,7 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 			err = w.readSegment(reader, segmentNum, tail)
 
 			// Ignore all errors reading to end of segment whilst replaying the WAL.
+			// 当前replaying WAL时读到segment的最后时，忽略所有的错误
 			if !tail {
 				if err != nil && err != io.EOF {
 					level.Warn(w.logger).Log("msg", "ignoring error reading to end of segment, may have dropped data", "segment", segmentNum, "err", err)
@@ -361,6 +386,7 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 			}
 
 			// Otherwise, when we are tailing, non-EOFs are fatal.
+			// 否则，如果不是tailing，那么非EOF的错误都是fatal
 			if err != io.EOF {
 				return err
 			}
@@ -400,6 +426,7 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 	return nil
 }
 
+// readSegment遍历Segment中的record，写入w.writer中
 func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int, tail bool) error {
 	var (
 		dec     tsdb.RecordDecoder
@@ -418,11 +445,14 @@ func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int, tail bool) e
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
+			// 从reader中读取series，写入writer，也就是remote write queue
 			w.writer.StoreSeries(series, segmentNum)
 
 		case tsdb.RecordSamples:
 			// If we're not tailing a segment we can ignore any samples records we see.
 			// This speeds up replay of the WAL by > 10x.
+			// 如果我们不是在tailing一个segment，我们可以忽略任何我们看到的samples records
+			// 这会加速WAL的重放到十倍以上
 			if !tail {
 				break
 			}
@@ -439,6 +469,7 @@ func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int, tail bool) e
 			}
 			if len(send) > 0 {
 				// Blocks  until the sample is sent to all remote write endpoints or closed (because enqueue blocks).
+				// 阻塞直到sample被发送给了所有的remote write endpoints或者关闭
 				w.writer.Append(send)
 			}
 
@@ -471,6 +502,7 @@ func recordType(rt tsdb.RecordType) string {
 }
 
 // Read all the series records from a Checkpoint directory.
+// 从Checkpoint directory中读取所有的series records
 func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 	level.Debug(w.logger).Log("msg", "reading checkpoint", "dir", checkpointDir)
 	index, err := checkpointNum(checkpointDir)
@@ -479,10 +511,12 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 	}
 
 	// Ensure we read the whole contents of every segment in the checkpoint dir.
+	// 确保我们读取了checkpoint dir中每个segment的内容
 	segs, err := w.segments(checkpointDir)
 	if err != nil {
 		return errors.Wrap(err, "Unable to get segments checkpoint dir")
 	}
+	// 遍历checkpoint中的各个segments
 	for _, seg := range segs {
 		size, err := getSegmentSize(checkpointDir, seg)
 		if err != nil {

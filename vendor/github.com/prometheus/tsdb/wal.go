@@ -42,6 +42,7 @@ type WALEntryType uint8
 
 const (
 	// WALMagic is a 4 byte number every WAL segment file starts with.
+	// 每个WAL segment file都以WALMagic作为前四个字符
 	WALMagic = uint32(0x43AF00EF)
 
 	// WALFormatDefault is the version flag for the default outer segment file format.
@@ -49,6 +50,7 @@ const (
 )
 
 // Entry types in a segment file.
+// 在一个segment file中Entry的类型
 const (
 	WALEntrySymbols WALEntryType = 1
 	WALEntrySeries  WALEntryType = 2
@@ -84,6 +86,8 @@ func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
 
 // WAL is a write ahead log that can log new series labels and samples.
 // It must be completely read before new entries are logged.
+// WAL是一个write ahead log，它可以记录新的labels以及samples
+// 在新的entries被记录以前必须先完整地读入
 //
 // DEPRECATED: use wal pkg combined with the record codex instead.
 type WAL interface {
@@ -96,6 +100,7 @@ type WAL interface {
 }
 
 // WALReader reads entries from a WAL.
+// WALReader从一个WAL中读取entries
 type WALReader interface {
 	Read(
 		seriesf func([]RefSeries),
@@ -124,6 +129,8 @@ type RefSample struct {
 // segmentFile wraps a file object of a segment and tracks the highest timestamp
 // it contains. During WAL truncating, all segments with no higher timestamp than
 // the truncation threshold can be compacted.
+// segmentFile封装了一个segment的文件对象并且追踪了它包含的最高的timestamp
+// 在进行WAL truncating的时候，所有时间戳小于truncation threshold的都要被删除
 type segmentFile struct {
 	*os.File
 	maxTime   int64  // highest tombstone or sample timpstamp in segment
@@ -235,6 +242,7 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, 
 
 // repairingWALReader wraps a WAL reader and truncates its underlying SegmentWAL after the last
 // valid entry if it encounters corruption.
+// repairingWALReader封装一个WAL reader并且在它的最后一个合法的entry崩溃之后，截取它底层的SegmentWAL
 type repairingWALReader struct {
 	wal *SegmentWAL
 	r   WALReader
@@ -283,6 +291,8 @@ func (w *SegmentWAL) truncate(err error, file int, lastOffset int64) error {
 
 // Reader returns a new reader over the the write ahead log data.
 // It must be completely consumed before writing to the WAL.
+// Reader返回对于write ahead log data之上的一个新的reader
+// 它必须在写入WAL之后被完全消费
 func (w *SegmentWAL) Reader() WALReader {
 	return &repairingWALReader{
 		wal: w,
@@ -503,6 +513,7 @@ func (w *SegmentWAL) LogDeletes(stones []Stone) error {
 }
 
 // openSegmentFile opens the given segment file and consumes and validates header.
+// openSegmentFile打开给定的segment file并且消费以及检验header
 func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 	// We must open all files in read/write mode as we may have to truncate along
 	// the way and any file may become the head.
@@ -832,6 +843,7 @@ func (w *SegmentWAL) encodeDeletes(buf *encoding.Encbuf, stones []Stone) uint8 {
 }
 
 // walReader decodes and emits write ahead log entries.
+// walReader解码并且发射write ahead log entries
 type walReader struct {
 	logger log.Logger
 
@@ -1228,6 +1240,7 @@ func deprecatedWALExists(logger log.Logger, dir string) (bool, error) {
 }
 
 // MigrateWAL rewrites the deprecated write ahead log into the new format.
+// MigrateWAL将废弃的wal改写为新的format
 func MigrateWAL(logger log.Logger, dir string) (err error) {
 	if logger == nil {
 		logger = log.NewNopLogger()

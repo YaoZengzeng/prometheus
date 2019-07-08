@@ -81,6 +81,7 @@ func (s AlertState) String() string {
 }
 
 // Alert is the user-level representation of a single instance of an alerting rule.
+// Alert是一个alerting rule的单个实例在用户层面的体现
 type Alert struct {
 	State AlertState
 
@@ -88,9 +89,12 @@ type Alert struct {
 	Annotations labels.Labels
 
 	// The value at the last evaluation of the alerting expression.
+	// alertring expression在上次进行evaluation的值
 	Value float64
 	// The interval during which the condition of this alert held true.
 	// ResolvedAt will be 0 to indicate a still active alert.
+	// 这个alert的状态为true的时间间隔
+	// ResolvedAt为0用来表示一个依然active的alert
 	ActiveAt   time.Time
 	FiredAt    time.Time
 	ResolvedAt time.Time
@@ -99,11 +103,13 @@ type Alert struct {
 }
 
 func (a *Alert) needsSending(ts time.Time, resendDelay time.Duration) bool {
+	// 如果当前状态是StatePending，则不发送
 	if a.State == StatePending {
 		return false
 	}
 
 	// if an alert has been resolved since the last send, resend it
+	// 如果alert从上次发送之后被resolved了，则重新发送它
 	if a.ResolvedAt.After(a.LastSentAt) {
 		return true
 	}
@@ -135,8 +141,10 @@ type AlertingRule struct {
 	// Time in seconds taken to evaluate rule.
 	evaluationDuration time.Duration
 	// Timestamp of last evaluation of rule.
+	// rule上一次进行evaluation的时间戳
 	evaluationTimestamp time.Time
 	// The health of the alerting rule.
+	// alerting rule的状态
 	health RuleHealth
 	// The last error seen by the alerting rule.
 	lastError error
@@ -292,6 +300,7 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
+// Eval评估rule expression并且创建pending alerts以及fires或者移除相应的pending alerts
 func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
 	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
@@ -305,6 +314,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 	// Create pending alerts for any new vector elements in the alert expression
 	// or update the expression value for existing elements.
+	// 为alert expression的新的vector elements创建pending alerts
+	// 或者为已经存在的elements更新expression value
 	resultFPs := map[uint64]struct{}{}
 
 	var vec promql.Vector
@@ -320,6 +331,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		// who are not used to Go's templating system.
 		defs := "{{$labels := .Labels}}{{$value := .Value}}"
 
+		// 对label进行扩展
 		expand := func(text string) string {
 			tmpl := template.NewTemplateExpander(
 				ctx,
@@ -356,6 +368,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 		// Check whether we already have alerting state for the identifying label set.
 		// Update the last value and annotations if so, create a new alert entry otherwise.
+		// 检查对于identifying label set我们是否已经有了alerting state，如果有的话，更新last value以及annotation
+		// 否则创建一个新的alert
 		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
 			alert.Value = smpl.V
 			alert.Annotations = annotations
@@ -372,10 +386,13 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	}
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
+	// 检测任何的pending alerts应该被移除或者fire
 	for fp, a := range r.active {
 		if _, ok := resultFPs[fp]; !ok {
 			// If the alert was previously firing, keep it around for a given
 			// retention time so it is reported as resolved to the AlertManager.
+			// 如果之前的告警在最新的alerts中不存在了，如果之前这个alert是firing，则保留给定的时间
+			// 因此它就以resolved状态汇报给了AlertManager
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
 				delete(r.active, fp)
 			}
@@ -446,6 +463,7 @@ func (r *AlertingRule) currentAlerts() []*Alert {
 }
 
 // ForEachActiveAlert runs the given function on each alert.
+// ForEachActiveAlert为每个alert运行给定的函数
 // This should be used when you want to use the actual alerts from the AlertingRule
 // and not on its copy.
 // If you want to run on a copy of alerts then don't use this, get the alerts from 'ActiveAlerts()'.

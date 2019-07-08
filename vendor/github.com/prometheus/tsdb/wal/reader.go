@@ -23,6 +23,7 @@ import (
 )
 
 // Reader reads WAL records from an io.Reader.
+// Reader从一个io.Reader中读取WAL records
 type Reader struct {
 	rdr       io.Reader
 	err       error
@@ -39,6 +40,8 @@ func NewReader(r io.Reader) *Reader {
 
 // Next advances the reader to the next records and returns true if it exists.
 // It must not be called again after it returned false.
+// Next从reader中读取下一个records并且返回true，如果它存在的话
+// 它在返回false之后不能被再次调用
 func (r *Reader) Next() bool {
 	err := r.next()
 	if errors.Cause(err) == io.EOF {

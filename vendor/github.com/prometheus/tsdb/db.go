@@ -60,9 +60,11 @@ type Options struct {
 	// WALSegmentSize = 0, segment size is default size.
 	// WALSegmentSize > 0, segment size is WALSegmentSize.
 	// WALSegmentSize < 0, wal is disabled.
+	// 当WALSegmentSize小于0时，则wal被禁止
 	WALSegmentSize int
 
 	// Duration of persisted data to keep.
+	// 持久化数据存储的时间
 	RetentionDuration uint64
 
 	// Maximum number of bytes in blocks to be retained.
@@ -73,9 +75,11 @@ type Options struct {
 	MaxBytes int64
 
 	// The sizes of the Blocks.
+	// Blocks的大小
 	BlockRanges []int64
 
 	// NoLockfile disables creation and consideration of a lock file.
+	// NoLockfile禁止创建lock file
 	NoLockfile bool
 
 	// Overlapping blocks are allowed if AllowOverlappingBlocks is true.
@@ -173,6 +177,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 
 	m.loadedBlocks = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_blocks_loaded",
+		// 当前加载的data blocks
 		Help: "Number of currently loaded data blocks",
 	}, func() float64 {
 		db.mtx.RLock()
@@ -181,6 +186,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.symbolTableSize = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_symbol_table_size_bytes",
+		// 当前在磁盘上的symbol table的大小
 		Help: "Size of symbol table on disk (in bytes)",
 	}, func() float64 {
 		db.mtx.RLock()
@@ -194,6 +200,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.reloads = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_reloads_total",
+		// 数据库中从磁盘加载block data的次数
 		Help: "Number of times the database reloaded block data from disk.",
 	})
 	m.reloadsFailed = prometheus.NewCounter(prometheus.CounterOpts{
@@ -206,10 +213,12 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.timeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_time_retentions_total",
+		// 因此time limit到达之后，blocks被删除的次数
 		Help: "The number of times that blocks were deleted because the maximum time limit was exceeded.",
 	})
 	m.compactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_compactions_skipped_total",
+		// 因为不能自动压缩，跳过compactions的次数
 		Help: "Total number of skipped compactions due to disabled auto compaction.",
 	})
 	m.startTime = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -229,10 +238,12 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.blocksBytes = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_storage_blocks_bytes",
+		// 所有blocks存储在本地的字节数
 		Help: "The number of bytes that are currently used for local storage by all blocks.",
 	})
 	m.sizeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_size_retentions_total",
+		// blocks因为超过了最大的字节数被删除的次数
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
 
@@ -266,6 +277,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		opts = DefaultOptions
 	}
 	// Fixup bad format written by Prometheus 2.1.
+	// 修正由Prometheus2.1引入到bad format
 	if err := repairBadIndexVersion(l, dir); err != nil {
 		return nil, err
 	}
@@ -308,6 +320,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	db.compactCancel = cancel
 
 	var wlog *wal.WAL
+	// segmentSize默认为DefaultSegmentSize，即128M
 	segmentSize := wal.DefaultSegmentSize
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
@@ -331,6 +344,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 	// Set the min valid time for the ingested samples
 	// to be no lower than the maxt of the last block.
+	// 设置为摄入的样本设置min valid time，保证不小于上一个block的MaxTime
 	blocks := db.Blocks()
 	minValidTime := int64(math.MinInt64)
 	if len(blocks) > 0 {
@@ -373,6 +387,7 @@ func (db *DB) run() {
 			db.metrics.compactionsTriggered.Inc()
 
 			db.autoCompactMtx.Lock()
+			// 自动压缩？
 			if db.autoCompact {
 				if err := db.compact(); err != nil {
 					level.Error(db.logger).Log("msg", "compaction failed", "err", err)
@@ -391,12 +406,14 @@ func (db *DB) run() {
 }
 
 // Appender opens a new appender against the database.
+// Appender基于数据库打开一个新的appender
 func (db *DB) Appender() Appender {
 	return dbAppender{db: db, Appender: db.head.Appender()}
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
 // if necessary.
+// dbAppender封装数据库的head appender并且在commit的时候触发compactions
 type dbAppender struct {
 	Appender
 	db *DB
@@ -407,6 +424,7 @@ func (a dbAppender) Commit() error {
 
 	// We could just run this check every few minutes practically. But for benchmarks
 	// and high frequency use cases this is the safer way.
+	// 我们几乎可以每几分钟就做一次这个检查，但是对于benchmarks以及高频率的使用情况，这种方法是最保险的
 	if a.db.head.compactable() {
 		select {
 		case a.db.compactc <- struct{}{}:
@@ -521,6 +539,8 @@ func (db *DB) getBlock(id ulid.ULID) (*Block, bool) {
 
 // reload blocks and trigger head truncation if new blocks appeared.
 // Blocks that are obsolete due to replacement or retention will be deleted.
+// 重载blocks并且触发head truncation，如果新的blocks出现的话
+// 那些由于replacement或者retention而过时的blocks会被删除
 func (db *DB) reload() (err error) {
 	defer func() {
 		if err != nil {
@@ -537,6 +557,7 @@ func (db *DB) reload() (err error) {
 	deletable := db.deletableBlocks(loadable)
 
 	// Corrupted blocks that have been replaced by parents can be safely ignored and deleted.
+	// 损毁并且已经被parents替代的blocks可以被安全地忽略以及移除
 	// This makes it resilient against the process crashing towards the end of a compaction.
 	// Creation of a new block and deletion of its parents cannot happen atomically.
 	// By creating blocks with their parents, we can pick up the deletion where it left off during a crash.
@@ -557,6 +578,7 @@ func (db *DB) reload() (err error) {
 	}
 
 	// All deletable blocks should not be loaded.
+	// 所有被删除的blocks都不应该被加载
 	var (
 		bb         []*Block
 		blocksSize int64
@@ -625,6 +647,7 @@ func (db *DB) openBlocks() (blocks []*Block, corrupted map[ulid.ULID]error, err 
 
 	corrupted = make(map[ulid.ULID]error)
 	for _, dir := range dirs {
+		// 一次读取block的metadata file
 		meta, err := readMetaFile(dir)
 		if err != nil {
 			level.Error(db.logger).Log("msg", "not a block dir", "dir", dir)
@@ -856,6 +879,7 @@ func (db *DB) String() string {
 }
 
 // Blocks returns the databases persisted blocks.
+// Blocks返回数据库持久化的blocks
 func (db *DB) Blocks() []*Block {
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()

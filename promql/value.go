@@ -133,6 +133,7 @@ func (s Sample) MarshalJSON() ([]byte, error) {
 
 // Vector is basically only an alias for model.Samples, but the
 // contract is that in a Vector, all Samples have the same timestamp.
+// Vector仅仅是models.Samples的一个别名，但是约定在Vector里的所有Sample都有同样的时间戳
 type Vector []Sample
 
 func (vec Vector) String() string {

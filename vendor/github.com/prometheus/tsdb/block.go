@@ -263,6 +263,7 @@ func writeMetaFile(dir string, meta *BlockMeta) error {
 }
 
 // Block represents a directory of time series data covering a continuous time range.
+// Block代表一个时序数据的目录，包含了一个时间段中的数目
 type Block struct {
 	mtx            sync.RWMutex
 	closing        bool
