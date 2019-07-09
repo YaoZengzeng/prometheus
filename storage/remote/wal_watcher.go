@@ -161,12 +161,14 @@ func (w *WALWatcher) loop() {
 	for !isClosed(w.quit) {
 		w.startTime = timestamp.FromTime(time.Now())
 		if err := w.run(); err != nil {
+			// 在tailing的时候发生错误
 			level.Error(w.logger).Log("msg", "error tailing WAL", "err", err)
 		}
 
 		select {
 		case <-w.quit:
 			return
+		// 5s之后进行重试
 		case <-time.After(5 * time.Second):
 		}
 	}
@@ -400,6 +402,7 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 		return errors.Wrap(err, "tsdb.LastCheckpoint")
 	}
 
+	// 如果dir为空或者等于lastCheckpoint，则直接返回
 	if dir == "" || dir == w.lastCheckpoint {
 		return nil
 	}
@@ -411,10 +414,12 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 	}
 
 	if index >= segmentNum {
+		// 当前的segment已经在checkpoint之后了，跳过读取checkpoint
 		level.Debug(w.logger).Log("msg", "current segment is behind the checkpoint, skipping reading of checkpoint", "current", fmt.Sprintf("%08d", segmentNum), "checkpoint", dir)
 		return nil
 	}
 
+	// 检测到新的checkpoint
 	level.Debug(w.logger).Log("msg", "new checkpoint detected", "new", dir, "currentSegment", segmentNum)
 
 	if err = w.readCheckpoint(dir); err != nil {
@@ -422,6 +427,7 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 	}
 
 	// Clear series with a checkpoint or segment index # lower than the checkpoint we just read.
+	// 用一个checkpoint或者segment index清楚series
 	w.writer.SeriesReset(index)
 	return nil
 }

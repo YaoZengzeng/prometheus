@@ -147,8 +147,10 @@ var (
 
 // StorageClient defines an interface for sending a batch of samples to an
 // external timeseries database.
+// StorageClient定义了一个接口用于发送一系列的samples到远程的时序数据库
 type StorageClient interface {
 	// Store stores the given samples in the remote storage.
+	// Store将给定的samples存入远程存储
 	Store(context.Context, []byte) error
 	// Name identifies the remote storage implementation.
 	Name() string
@@ -215,6 +217,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 		seriesSegmentIndexes: make(map[uint64]int),
 		droppedSeries:        make(map[uint64]struct{}),
 
+		// 默认使用最小的shards
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
@@ -251,6 +254,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
+// Append将一个sample入队，等待发送到远程存储，阻塞直到所有的samples在它们的sbards里入队，或者收到一个shutdown signal
 func (t *QueueManager) Append(s []tsdb.RefSample) bool {
 	type enqueuable struct {
 		ts  prompb.TimeSeries
@@ -359,12 +363,14 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
+		// temp用于临时存储转换后的series
 		temp[s.Ref] = labelsToLabelsProto(rl)
 	}
 
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 	for ref, labels := range temp {
+		// 设置ref对应的index
 		t.seriesSegmentIndexes[ref] = index
 
 		// We should not ever be replacing a series labels in the map, but just
@@ -373,6 +379,7 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 		if orig, ok := t.seriesLabels[ref]; ok {
 			release(orig)
 		}
+		// 最终插入QueueManager的seriesLabels
 		t.seriesLabels[ref] = labels
 	}
 }
@@ -380,12 +387,15 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 // SeriesReset is used when reading a checkpoint. WAL Watcher should have
 // stored series records with the checkpoints index number, so we can now
 // delete any ref ID's lower than that # from the two maps.
+// SeriesReset会在读取一个checkpoint的时候使用，WAL Watcher应该已经存储了checkpoints index number
+// 的series records，因此我们可以删除任何ref ID小于它的
 func (t *QueueManager) SeriesReset(index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
 
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
+	// 检查segments中老于checkpoint但是不存在于checkpoint中的segments里的series
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
@@ -534,6 +544,7 @@ func (t *QueueManager) reshardLoop() {
 			// We start the newShards after we have stopped (the therefore completely
 			// flushed) the oldShards, to guarantee we only every deliver samples in
 			// order.
+			// 我们启动newShards在我们停止了oldShards之后，用来保证我们只按顺序传输samples
 			t.shards.stop()
 			t.shards.start(numShards)
 		case <-t.quit:

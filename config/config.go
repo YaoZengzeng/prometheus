@@ -103,9 +103,11 @@ var (
 	}
 
 	// DefaultQueueConfig is the default remote queue configuration.
+	// DefaultQueueConfig是默认的远程队列配置
 	DefaultQueueConfig = QueueConfig{
 		// With a maximum of 1000 shards, assuming an average of 100ms remote write
 		// time and 100 samples per batch, we will be able to push 1M samples/s.
+		// 最多1000个shards，假设平均100ms的remote write时间并且每批100个samples，我们每秒可以推送1M个samples
 		MaxShards:         1000,
 		MinShards:         1,
 		MaxSamplesPerSend: 100,
@@ -113,6 +115,7 @@ var (
 		// Each shard will have a max of 10 samples pending in it's channel, plus the pending
 		// samples that have been enqueued. Theoretically we should only ever have about 110 samples
 		// per shard pending. At 1000 shards that's 110k.
+		// 每个shard最多会有10个samples在channel
 		Capacity:          10,
 		BatchSendDeadline: model.Duration(5 * time.Second),
 
