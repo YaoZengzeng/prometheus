@@ -229,6 +229,7 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
+// Append将一个sample入队，等待发送到远程的存储，阻塞直到所有的sample都进入到它们的shard或者收到了一个shutdonw signal
 func (t *QueueManager) Append(s []tsdb.RefSample) bool {
 outer:
 	for _, sample := range s {
@@ -242,6 +243,7 @@ outer:
 			continue
 		}
 		// This will only loop if the queues are being resharded.
+		// 只有队列在reshard的时候才会进行循环
 		backoff := t.cfg.MinBackoff
 		for {
 			select {
@@ -540,10 +542,12 @@ type shards struct {
 	running int32
 
 	// Soft shutdown context will prevent new enqueues and deadlocks.
+	// Soft shutdonw context会阻止新的enqueues以及死锁
 	softShutdown chan struct{}
 
 	// Hard shutdown context is used to terminate outgoing HTTP connections
 	// after giving them a chance to terminate.
+	// Hard shutdown context用来关闭对外的HTTP连接，在给了它们关闭的缓冲时间之后
 	hardShutdown context.CancelFunc
 }
 
@@ -591,6 +595,7 @@ func (s *shards) stop() {
 	select {
 	case <-s.done:
 		return
+	// 默认等待一分钟来shutdown
 	case <-time.After(s.qm.flushDeadline):
 		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown")
 	}
@@ -602,12 +607,16 @@ func (s *shards) stop() {
 
 // enqueue a sample.  If we are currently in the process of shutting down or resharding,
 // will return false; in this case, you should back off and retry.
+// 将一个sample入队，如果我们正处于关闭或者resharding的状态会返回false
+// 在这种情况下，应该回退并且重试
 func (s *shards) enqueue(ref uint64, sample prompb.TimeSeries) bool {
+	// 入队的时候进行RLock()
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
 	select {
 	case <-s.softShutdown:
+		// 如果softShutdown已经关闭，则直接返回false
 		return false
 	default:
 	}
@@ -633,6 +642,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline
 	// anyways.
+	// MaxSamplesPerSend是100，如果我们的samples数目比这个少，则在deadline之后就flush
 	max := s.qm.cfg.MaxSamplesPerSend
 	pendingSamples := make([]prompb.TimeSeries, 0, max)
 	var buf []byte
@@ -657,6 +667,7 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 			if !ok {
 				if len(pendingSamples) > 0 {
 					level.Debug(s.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", len(pendingSamples))
+					// 重用buf
 					s.sendSamples(ctx, pendingSamples, &buf)
 					s.qm.pendingSamplesMetric.Sub(float64(len(pendingSamples)))
 					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
@@ -675,7 +686,9 @@ func (s *shards) runShard(ctx context.Context, i int, queue chan prompb.TimeSeri
 				pendingSamples = append(pendingSamples[:0], pendingSamples[max:]...)
 				s.qm.pendingSamplesMetric.Sub(float64(max))
 
+				// 手动将定时时钟关闭
 				stop()
+				// BatchSendDeadline为100ms
 				timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 			}
 
@@ -697,6 +710,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 	err := s.sendSamplesWithBackoff(ctx, samples, buf)
 	if err != nil {
 		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", len(samples), "err", err)
+		// 通过回退也发送失败了，就记录为failed samples
 		s.qm.failedSamplesTotal.Add(float64(len(samples)))
 	}
 
@@ -707,6 +721,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
+// sendSamples将samples写入远程存储，对于可恢复的错误进行backoff
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, buf *[]byte) error {
 	backoff := s.qm.cfg.MinBackoff
 	req, highest, err := buildWriteRequest(samples, *buf)

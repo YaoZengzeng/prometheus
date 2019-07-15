@@ -73,6 +73,7 @@ type recoverableError struct {
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
 // and encoded bytes from codec.go.
+// Store将一系列的samples发送到HTTP endpoint，请求倍proto marshalled并且用codec.go进行了编码
 func (c *Client) Store(ctx context.Context, req []byte) error {
 	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(req))
 	if err != nil {
