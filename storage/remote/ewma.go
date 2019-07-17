@@ -20,8 +20,10 @@ import (
 )
 
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.
+// ewmaRate用ewma记录每分钟都速率
 type ewmaRate struct {
 	newEvents int64
+	// alpha为0.2
 	alpha     float64
 	interval  time.Duration
 	lastRate  float64
@@ -39,6 +41,7 @@ func newEWMARate(alpha float64, interval time.Duration) *ewmaRate {
 }
 
 // rate returns the per-second rate.
+// rate返回每秒钟的速率
 func (r *ewmaRate) rate() float64 {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -46,15 +49,18 @@ func (r *ewmaRate) rate() float64 {
 }
 
 // tick assumes to be called every r.interval.
+// tick假设每r.interval调用一次
 func (r *ewmaRate) tick() {
 	newEvents := atomic.LoadInt64(&r.newEvents)
 	atomic.AddInt64(&r.newEvents, -newEvents)
+	// 在这个interval中，事件产生的速率
 	instantRate := float64(newEvents) / r.interval.Seconds()
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
 	if r.init {
+		// 当前速率为lastRate加上instansRate和lastRate之差乘以0.2
 		r.lastRate += r.alpha * (instantRate - r.lastRate)
 	} else {
 		r.init = true

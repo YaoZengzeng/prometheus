@@ -40,12 +40,15 @@ var (
 			Namespace: namespace,
 			Subsystem: subsystem,
 			Name:      "highest_timestamp_in_seconds",
+			// 通过Appender接口发送给远程存储的最大的timestamp
+			// 单位为s
 			Help:      "Highest timestamp that has come into the remote storage via the Appender interface, in seconds since epoch.",
 		}),
 	}
 )
 
 // WriteStorage represents all the remote write storage.
+// WriteStorage代表了所有的remote write storage
 type WriteStorage struct {
 	logger log.Logger
 	mtx    sync.Mutex
@@ -181,9 +184,11 @@ func (t *timestampTracker) AddFast(l labels.Labels, _ uint64, ts int64, v float6
 
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
+	// 
 	t.writeStorage.samplesIn.incr(t.samples)
 
 	samplesIn.Add(float64(t.samples))
+	// 设置最大的timestamp
 	highestTimestamp.Set(float64(t.highestTimestamp / 1000))
 	return nil
 }

@@ -44,6 +44,7 @@ const (
 
 	// We track samples in/out and how long pushes take using an Exponentially
 	// Weighted Moving Average.
+	// 我们通过EWMA追踪sample的进出以及推送花费的时间
 	ewmaWeight          = 0.2
 	shardUpdateDuration = 10 * time.Second
 
@@ -211,11 +212,13 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 		seriesSegmentIndexes: make(map[uint64]int),
 		droppedSeries:        make(map[uint64]struct{}),
 
+		// 默认启动的shard为MinShards
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
 
 		samplesIn:          samplesIn,
+		// 每十秒钟更新一次，ewmaWeight为0.2
 		samplesDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
@@ -236,6 +239,7 @@ outer:
 		lbls, ok := t.seriesLabels[sample.Ref]
 		if !ok {
 			t.droppedSamplesTotal.Inc()
+			// 直接被drop的sample
 			t.samplesDropped.incr(1)
 			if _, ok := t.droppedSeries[sample.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "dropped sample for series that was not explicitly dropped via relabelling", "ref", sample.Ref)
@@ -441,13 +445,18 @@ func (t *QueueManager) calculateDesiredShards() {
 	// will need to do next iteration.  We add to this any pending samples
 	// (received - send) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
+	// 我们使用接收到的samples数目作为对于下一轮我们需要做多少工作的预测
+	// 我们使用发出的batch的延迟来决定我们需要多少shards
 	var (
+		// 上一个interval中sample进和出的速度
 		samplesIn          = t.samplesIn.rate()
 		samplesOut         = t.samplesOut.rate()
 		samplesKeptRatio   = samplesOut / (t.samplesDropped.rate() + samplesOut)
 		samplesOutDuration = t.samplesOutDuration.rate()
 		highestSent        = t.highestSentTimestampMetric.Get()
 		highestRecv        = highestTimestamp.Get()
+		// 接收到的最大的时间戳减去发送出去的最大的时间戳乘以进入的时间戳再乘以每秒进入的samples
+		// samplesPending得到的其实是pending的samples的数目
 		samplesPending     = (highestRecv - highestSent) * samplesIn * samplesKeptRatio
 	)
 
@@ -459,6 +468,7 @@ func (t *QueueManager) calculateDesiredShards() {
 	}
 
 	var (
+		// 平均每个sample的发送事件
 		timePerSample = samplesOutDuration / samplesOut
 		desiredShards = (timePerSample * samplesPending) / float64(time.Second)
 	)
@@ -484,6 +494,7 @@ func (t *QueueManager) calculateDesiredShards() {
 		return
 	}
 
+	// 获取比desiredShards大的最小整数
 	numShards := int(math.Ceil(desiredShards))
 	if numShards > t.cfg.MaxShards {
 		numShards = t.cfg.MaxShards
@@ -496,6 +507,7 @@ func (t *QueueManager) calculateDesiredShards() {
 
 	// Resharding can take some time, and we want this loop
 	// to stay close to shardUpdateDuration.
+	// Resharding可能会耗费一些时间,如果当前正在resharding，则直接跳过
 	select {
 	case t.reshardChan <- numShards:
 		level.Info(t.logger).Log("msg", "Remote storage resharding", "from", t.numShards, "to", numShards)
@@ -716,6 +728,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
+	// 这些counters用来计算dynamic sharding，不论成功或者失败都应该被记录
 	s.qm.samplesOut.incr(int64(len(samples)))
 	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
 }
@@ -768,6 +781,7 @@ func buildWriteRequest(samples []prompb.TimeSeries, buf []byte) ([]byte, int64, 
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample in it.
 		if ts.Samples[0].Timestamp > highest {
+			// 记录最大的timestamp
 			highest = ts.Samples[0].Timestamp
 		}
 	}
