@@ -57,6 +57,7 @@ var (
 )
 
 // Head handles reads and writes of time series data within a time window.
+// Head处理对于一个时间窗口内的时间序列的读写问题
 type Head struct {
 	chunkRange int64
 	metrics    *headMetrics
@@ -65,6 +66,7 @@ type Head struct {
 	appendPool sync.Pool
 	bytesPool  sync.Pool
 
+	// 当前head中最小的和最大的samples
 	minTime, maxTime int64 // Current min and max of the samples included in the head.
 	minValidTime     int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastSeriesID     uint64
@@ -77,6 +79,7 @@ type Head struct {
 	values  map[string]stringset // label names to possible values
 
 	deletedMtx sync.Mutex
+	// 被删除的series以及它们必须保持到对应的WAL segment被删除以后
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
 	postings *index.MemPostings // postings lists for terms
@@ -223,6 +226,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 }
 
 // NewHead opens the head block in dir.
+// NewHead在wal中打开head block
 func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int64) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -493,9 +497,12 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 // Init loads data from the write ahead log and prepares the head for writes.
 // It should be called before using an appender so that
 // limits the ingested samples to the head min valid time.
+// Init从wal加载数据并且准备写head
+// 它应该在使用一个appender之前被使用，这样就能限制摄入的samples在head min valid time以内
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime = minValidTime
 	defer h.postings.EnsureOrder()
+	// 在加载了wal之后，从head中移除过时的data
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
 	if h.wal == nil {
@@ -503,6 +510,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	// Backfill the checkpoint first if it exists.
+	// 如果error是ErrNotFound，则startFrom为0
 	dir, startFrom, err := LastCheckpoint(h.wal.Dir())
 	if err != nil && err != ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
@@ -534,6 +542,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	// Backfill segments from the most recent checkpoint onwards.
+	// 从最近的checkpoint开始回填segments
 	for i := startFrom; i <= last; i++ {
 		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
 		if err != nil {
@@ -554,6 +563,7 @@ func (h *Head) Init(minValidTime int64) error {
 }
 
 // Truncate removes old data before mint from the head.
+// Truncate从head中移除老于mint的数据
 func (h *Head) Truncate(mint int64) (err error) {
 	defer func() {
 		if err != nil {
@@ -565,16 +575,19 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if h.MinTime() >= mint && !initialize {
 		return nil
 	}
+	// 设置head的minTime和minValidTime为mint
 	atomic.StoreInt64(&h.minTime, mint)
 	atomic.StoreInt64(&h.minValidTime, mint)
 
 	// Ensure that max time is at least as high as min time.
+	// 确保head的max time和min time至少一样高
 	for h.MaxTime() < mint {
 		atomic.CompareAndSwapInt64(&h.maxTime, h.MaxTime(), mint)
 	}
 
 	// This was an initial call to Truncate after loading blocks on startup.
 	// We haven't read back the WAL yet, so do not attempt to truncate it.
+	// 这是在启动加载blocks之后第一次调用Truncate，我们还没有读取WAL，因此不要试着去截取它
 	if initialize {
 		return nil
 	}
@@ -582,10 +595,12 @@ func (h *Head) Truncate(mint int64) (err error) {
 	h.metrics.headTruncateTotal.Inc()
 	start := time.Now()
 
+	// 首先对head进行gc
 	h.gc()
 	level.Info(h.logger).Log("msg", "head GC completed", "duration", time.Since(start))
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
 
+	// 如果没有wal，则直接返回，不进行截取
 	if h.wal == nil {
 		return nil
 	}
@@ -597,22 +612,27 @@ func (h *Head) Truncate(mint int64) (err error) {
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
+	// 启动一个新的segment，因此low ingestion volume TSDB不会有着太多的WAL
 	err = h.wal.NextSegment()
 	if err != nil {
 		return errors.Wrap(err, "next segment")
 	}
 	last-- // Never consider last segment for checkpoint.
+	// 从不考虑最后一个segment用于checkpoint
 	if last < 0 {
 		return nil // no segments yet.
 	}
 	// The lower third of segments should contain mostly obsolete samples.
 	// If we have less than three segments, it's not worth checkpointing yet.
+	// 后三分之一的segments应该包含大多数被遗弃的samples
+	// 如果segment的数目小于三个，则不值得进行checkpoint
 	last = first + (last-first)/3
 	if last <= first {
 		return nil
 	}
 
 	keep := func(id uint64) bool {
+		// 如果id在series中或者deleted中，则返回true
 		if h.series.getByID(id) != nil {
 			return true
 		}
@@ -622,19 +642,24 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return ok
 	}
 	h.metrics.checkpointCreationTotal.Inc()
+	// 进行checkpoint
 	if _, err = Checkpoint(h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
 		return errors.Wrap(err, "create checkpoint")
 	}
+	// 对wal进行截取
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
 		// Leftover segments will just be ignored in the future if there's a checkpoint
 		// that supersedes them.
+		// 如果截取失败了，我们会在下一次checkpoint的时候再次尝试
+		// 剩下的segments会被忽略，如果一个checkpoint分离了它们
 		level.Error(h.logger).Log("msg", "truncating segments failed", "err", err)
 	}
 
 	// The checkpoint is written and segments before it is truncated, so we no
 	// longer need to track deleted series that are before it.
+	// checkpoint已经被写入，它之前的segments被截取了，因此我们不再需要追踪它之前被删除掉series
 	h.deletedMtx.Lock()
 	for ref, segment := range h.deleted {
 		if segment < first {
@@ -647,7 +672,9 @@ func (h *Head) Truncate(mint int64) (err error) {
 	if err := DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space.
+		// 被遗留下来的老的checkpoints不会造成任何问题，除了占据一定的磁盘空间
 		// They will just be ignored since a higher checkpoint exists.
+		// 它们直接会被忽略，因此更高的checkpoint存在
 		level.Error(h.logger).Log("msg", "delete old checkpoints", "err", err)
 		h.metrics.checkpointDeleteFail.Inc()
 	}
@@ -700,6 +727,7 @@ func (h *rangeHead) MaxTime() int64 {
 
 // initAppender is a helper to initialize the time bounds of the head
 // upon the first sample it receives.
+// initAppender是一个helper用来初始化head的time bounds，当接收到第一个sample的时候
 type initAppender struct {
 	app  Appender
 	head *Head
@@ -737,11 +765,13 @@ func (a *initAppender) Rollback() error {
 }
 
 // Appender returns a new Appender on the database.
+// Appender返回数据库的一个新的Appender
 func (h *Head) Appender() Appender {
 	h.metrics.activeAppenders.Inc()
 
 	// The head cache might not have a starting point yet. The init appender
 	// picks up the first appended timestamp as the base.
+	// head cache可能还没有一个开始点，init appender选取第一个appended timestamp作为base
 	if h.MinTime() == math.MaxInt64 {
 		return &initAppender{head: h}
 	}
@@ -749,6 +779,7 @@ func (h *Head) Appender() Appender {
 }
 
 func (h *Head) appender() *headAppender {
+	// 每次调用appender就返回一个headAppender
 	return &headAppender{
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
@@ -756,6 +787,7 @@ func (h *Head) appender() *headAppender {
 		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
+		// 从buffer中找出samples的缓存
 		samples:      h.getAppendBuffer(),
 	}
 }
@@ -895,6 +927,7 @@ func (a *headAppender) Commit() error {
 
 	for _, s := range a.samples {
 		s.series.Lock()
+		// 对每个Sample都独立加锁
 		ok, chunkCreated := s.series.append(s.T, s.V)
 		s.series.pendingCommit = false
 		s.series.Unlock()
@@ -1012,12 +1045,15 @@ func (h *Head) chunkRewrite(ref uint64, dranges Intervals) (err error) {
 }
 
 // gc removes data before the minimum timestamp from the head.
+// gc移除head的minimum timestamp以前的数据
 func (h *Head) gc() {
 	// Only data strictly lower than this timestamp must be deleted.
+	// 只有低于timestamp的数据才会被移除
 	mint := h.MinTime()
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
+	// 丢弃老的chunks以及记住series IDs以及哈希，如果他们能被完全删除
 	deleted, chunksRemoved := h.series.gc(mint)
 	seriesRemoved := len(deleted)
 
@@ -1414,6 +1450,8 @@ func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
 // The locks are padded to not be on the same cache line. Filling the padded space
 // with the maps was profiled to be slower – likely due to the additional pointer
 // dereferences.
+// stripeSeries锁住对ID以及哈希用模进行划分以防止锁争用
+// locks被扩展了，以防止在同一个cache line中
 type stripeSeries struct {
 	series [stripeSize]map[uint64]*memSeries
 	hashes [stripeSize]seriesHashmap
@@ -1550,6 +1588,7 @@ func (s sample) V() float64 {
 
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
+// memSeries是一个series在内存中的表示
 type memSeries struct {
 	sync.Mutex
 

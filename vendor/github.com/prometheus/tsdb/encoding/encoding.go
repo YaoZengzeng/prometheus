@@ -28,6 +28,7 @@ var (
 )
 
 // Encbuf is a helper type to populate a byte slice with various types.
+// Encbuf是一个helper类型用来用各种类型填充一个byte slice
 type Encbuf struct {
 	B []byte
 	C [binary.MaxVarintLen64]byte

@@ -34,6 +34,7 @@ const (
 // token. The method is opened before the matching rules block and closed at
 // the end of the file.
 func (l *promlexer) Lex() token {
+	// 如果到头了，就返回tEOF
 	if l.i >= len(l.b) {
 		return tEOF
 	}

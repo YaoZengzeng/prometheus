@@ -234,6 +234,7 @@ type Options struct {
 }
 
 // New initializes a new web Handler.
+// New初始化一个新的web Handler
 func New(logger log.Logger, o *Options) *Handler {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -406,6 +407,7 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 }
 
 // Ready sets Handler to be ready.
+// 将Handler设置为Ready
 func (h *Handler) Ready() {
 	atomic.StoreUint32(&h.ready, 1)
 }
@@ -417,6 +419,7 @@ func (h *Handler) isReady() bool {
 }
 
 // Checks if server is ready, calls f if it is, returns 503 if it is not.
+// 检查server是否ready，如果是的话，调用f，返回503，如果不是的话 
 func (h *Handler) testReady(f http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if h.isReady() {

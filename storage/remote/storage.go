@@ -45,6 +45,7 @@ type Storage struct {
 }
 
 // NewStorage returns a remote.Storage.
+// 默认的flushDeadline为1分钟
 func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -67,6 +68,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 	}
 
 	// Update read clients
+	// 更新read client
 	queryables := make([]storage.Queryable, 0, len(conf.RemoteReadConfigs))
 	for i, rrConf := range conf.RemoteReadConfigs {
 		c, err := NewClient(i, &ClientConfig{
@@ -117,6 +119,7 @@ func (s *Storage) Querier(ctx context.Context, mint, maxt int64) (storage.Querie
 }
 
 // Appender implements storage.Storage.
+// Appender直接返回rws的Appender
 func (s *Storage) Appender() (storage.Appender, error) {
 	return s.rws.Appender()
 }

@@ -181,6 +181,7 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
+// ApplyConfig移除所有正在运行的discovery providers并且用给定的配置启动新的
 func (m *Manager) ApplyConfig(cfg map[string]sd_config.ServiceDiscoveryConfig) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()

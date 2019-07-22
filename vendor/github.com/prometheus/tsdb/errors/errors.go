@@ -21,6 +21,7 @@ import (
 
 // The MultiError type implements the error interface, and contains the
 // Errors used to construct it.
+// MultiError类型实现了error接口，并且包含了构成它的Errors
 type MultiError []error
 
 // Returns a concatenated string of the contained errors

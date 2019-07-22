@@ -67,6 +67,7 @@ func NewLiveReader(logger log.Logger, metrics *liveReaderMetrics, r io.Reader) *
 // LiveReader reads WAL records from an io.Reader. It allows reading of WALs
 // that are still in the process of being written, and returns records as soon
 // as they can be read.
+// LiveReader从WAL 
 type LiveReader struct {
 	logger     log.Logger
 	rdr        io.Reader

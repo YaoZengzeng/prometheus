@@ -626,9 +626,11 @@ type QueueConfig struct {
 	MinShards int `yaml:"min_shards,omitempty"`
 
 	// Maximum number of samples per send.
+	// 每次发送的最大的samples的数目
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
 
 	// Maximum time sample will wait in buffer.
+	// sample在缓存中等待的最长时间
 	BatchSendDeadline model.Duration `yaml:"batch_send_deadline,omitempty"`
 
 	// On recoverable errors, backoff exponentially.

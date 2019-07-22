@@ -40,6 +40,7 @@ const (
 	chunksFormatV1          = 1
 	ChunksFormatVersionSize = 1
 
+	// chunkHeaderSize为5
 	chunkHeaderSize = MagicChunksSize + ChunksFormatVersionSize
 )
 
@@ -347,6 +348,7 @@ func (w *Writer) Close() error {
 }
 
 // ByteSlice abstracts a byte slice.
+// ByteSlice抽象了一个字节切片
 type ByteSlice interface {
 	Len() int
 	Range(start, end int) []byte
@@ -368,6 +370,7 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 
 // Reader implements a SeriesReader for a serialized byte stream
 // of series data.
+// Reader实现了一个SeriesReader，对于series data的一系列序列化的byte stream
 type Reader struct {
 	bs   []ByteSlice // The underlying bytes holding the encoded series data.
 	cs   []io.Closer // Closers for resources behind the byte slices.
@@ -379,7 +382,9 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 	cr := Reader{pool: pool, bs: bs, cs: cs}
 	var totalSize int64
 
+	// 检测每个chunk文件的Header Size
 	for i, b := range cr.bs {
+		// chunk文件的大小必须大于chunkHeadSize
 		if b.Len() < chunkHeaderSize {
 			return nil, errors.Wrapf(errInvalidSize, "invalid chunk header in segment %d", i)
 		}
@@ -392,6 +397,7 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 		if v := int(b.Range(MagicChunksSize, MagicChunksSize+ChunksFormatVersionSize)[0]); v != chunksFormatV1 {
 			return nil, errors.Errorf("invalid chunk format version %d", v)
 		}
+		// 总大小加上b.Len()
 		totalSize += int64(b.Len())
 	}
 	cr.size = totalSize
@@ -400,6 +406,7 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 
 // NewDirReader returns a new Reader against sequentially numbered files in the
 // given directory.
+// NewDirReader返回一个新的Reader，针对给定目录里的以顺序编号的文件
 func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	files, err := sequenceFiles(dir)
 	if err != nil {
@@ -415,6 +422,7 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 		merr tsdb_errors.MultiError
 	)
 	for _, fn := range files {
+		// 打开mmap文件
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
 			merr.Add(errors.Wrap(err, "mmap files"))

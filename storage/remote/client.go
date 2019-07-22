@@ -39,6 +39,7 @@ var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
 // Client allows reading and writing from/to a remote HTTP endpoint.
 type Client struct {
+	// index用来在metrics中区分各个client
 	index   int // Used to differentiate clients in metrics.
 	url     *config_util.URL
 	client  *http.Client

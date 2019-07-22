@@ -55,6 +55,7 @@ type WriteStorage struct {
 
 	configHash    [16]byte
 	walDir        string
+	// 多个QueueManager
 	queues        []*QueueManager
 	samplesIn     *ewmaRate
 	flushDeadline time.Duration
@@ -79,6 +80,7 @@ func (rws *WriteStorage) run() {
 	ticker := time.NewTicker(shardUpdateDuration)
 	defer ticker.Stop()
 	for range ticker.C {
+		// 每十分钟触发一次samplesIn的计算
 		rws.samplesIn.tick()
 	}
 }
@@ -91,6 +93,8 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	// Remote write queues only need to change if the remote write config or
 	// external labels change. Hash these together and only reload if the hash
 	// changes.
+	// 只有在远程写的配置或者external labels改变的时候，Remote write queues才需要改变
+	// 将这些合起来进行哈希，只有在哈希值改变的时候才需要重载
 	cfgBytes, err := json.Marshal(conf.RemoteWriteConfigs)
 	if err != nil {
 		return err
@@ -146,6 +150,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 
 // Appender implements storage.Storage.
 func (rws *WriteStorage) Appender() (storage.Appender, error) {
+	// WriteStorage的Appender返回一个timestampTracker对象
 	return &timestampTracker{
 		writeStorage: rws,
 	}, nil
@@ -161,6 +166,7 @@ func (rws *WriteStorage) Close() error {
 	return nil
 }
 
+// 对于远程读写来说，timestampTracker仅仅是Appender接口的空的实现，用来记录samplesIn，以及时间戳
 type timestampTracker struct {
 	writeStorage     *WriteStorage
 	samples          int64
@@ -184,7 +190,7 @@ func (t *timestampTracker) AddFast(l labels.Labels, _ uint64, ts int64, v float6
 
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
-	// 
+	// 是不是应该重新设置t.samples为0
 	t.writeStorage.samplesIn.incr(t.samples)
 
 	samplesIn.Add(float64(t.samples))

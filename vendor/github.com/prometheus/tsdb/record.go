@@ -30,8 +30,10 @@ const (
 	// RecordInvalid is returned for unrecognised WAL record types.
 	RecordInvalid RecordType = 255
 	// RecordSeries is used to match WAL records of type Series.
+	// RecordSeries用来匹配Series类型的WAL records
 	RecordSeries RecordType = 1
 	// RecordSamples is used to match WAL records of type Samples.
+	// RecordSamples用于匹配Samples类型的WAL records
 	RecordSamples RecordType = 2
 	// RecordTombstones is used to match WAL records of type Tombstones.
 	RecordTombstones RecordType = 3
@@ -193,6 +195,7 @@ func (e *RecordEncoder) Samples(samples []RefSample, b []byte) []byte {
 }
 
 // Tombstones appends the encoded tombstones to b and returns the resulting slice.
+// Tombstones将编码的tombstones扩展到b并且返回结果
 func (e *RecordEncoder) Tombstones(tstones []Stone, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(RecordTombstones))

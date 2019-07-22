@@ -60,6 +60,7 @@ type Manager struct {
 	append    Appendable
 	graceShut chan struct{}
 
+	// 全局的jitterSeed seed是用来在以HA方式部署的时候分散scrape的workload
 	jitterSeed    uint64     // Global jitterSeed seed is used to spread scrape workload across HA setup.
 	mtxScrape     sync.Mutex // Guards the fields below.
 	scrapeConfigs map[string]*config.ScrapeConfig
@@ -71,6 +72,8 @@ type Manager struct {
 
 // Run receives and saves target set updates and triggers the scraping loops reloading.
 // Reloading happens in the background so that it doesn't block receiving targets updates.
+// Run接收并且保存target set的更新，之后再触发scraping loops的重载
+// 重载在后台运行，因此它不会阻塞接收targets的更新
 func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 	go m.reloader()
 	for {
@@ -97,6 +100,7 @@ func (m *Manager) reloader() {
 		select {
 		case <-m.graceShut:
 			return
+		// 两次reload()的运行，至少间隔5秒
 		case <-ticker.C:
 			select {
 			case <-m.triggerReload:
@@ -118,6 +122,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
+			// 遍历targetSets，对于不存在scrapePools的就创建一个
 			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName))
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)

@@ -20,6 +20,7 @@ import (
 )
 
 // Pool is a bucketed pool for variably sized byte slices.
+// Pool是一个用于各种长度的byte slice的bucketed pool
 type Pool struct {
 	buckets []sync.Pool
 	sizes   []int
@@ -47,6 +48,7 @@ func New(minSize, maxSize int, factor float64, makeFunc func(int) interface{}) *
 	}
 
 	p := &Pool{
+		// 创建一个buckets，可以缓存不同大小的byte slice
 		buckets: make([]sync.Pool, len(sizes)),
 		sizes:   sizes,
 		make:    makeFunc,
@@ -56,6 +58,7 @@ func New(minSize, maxSize int, factor float64, makeFunc func(int) interface{}) *
 }
 
 // Get returns a new byte slices that fits the given size.
+// Get返回一个新的匹配给定size的byte slices
 func (p *Pool) Get(sz int) interface{} {
 	for i, bktSize := range p.sizes {
 		if sz > bktSize {
@@ -78,6 +81,7 @@ func (p *Pool) Put(s interface{}) {
 		panic(fmt.Sprintf("%+v is not a slice", slice))
 	}
 	for i, size := range p.sizes {
+		// 根据slice的cap来决定应该放在哪个bucket中
 		if slice.Cap() > size {
 			continue
 		}

@@ -116,6 +116,7 @@ func (t *Target) setMetadataStore(s metricMetadataStore) {
 }
 
 // hash returns an identifying hash for the target.
+// URL加labels唯一标识一个target
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
 	//nolint: errcheck

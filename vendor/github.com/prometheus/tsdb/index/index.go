@@ -137,6 +137,7 @@ type Writer struct {
 }
 
 // TOC represents index Table Of Content that states where each section of index starts.
+// TOC代表了Content的index Table，用来描述index的每个section开始的地方
 type TOC struct {
 	Symbols           uint64
 	Series            uint64
@@ -620,6 +621,7 @@ func NewReader(b ByteSlice) (*Reader, error) {
 }
 
 // NewFileReader returns a new index reader against the given index file.
+// NewFileReader返回对于给定的index file的一个新的index reader
 func NewFileReader(path string) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
@@ -645,6 +647,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 
 	// Verify header.
+	// 确认header是否合法
 	if r.b.Len() < HeaderLen {
 		return nil, errors.Wrap(encoding.ErrInvalidSize, "index header")
 	}

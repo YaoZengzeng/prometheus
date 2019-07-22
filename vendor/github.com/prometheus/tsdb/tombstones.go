@@ -136,6 +136,7 @@ type Stone struct {
 func readTombstones(dir string) (TombstoneReader, int64, error) {
 	b, err := ioutil.ReadFile(filepath.Join(dir, tombstoneFilename))
 	if os.IsNotExist(err) {
+		// 如果tombstone文件不存在，则创建一个内存中的tombstones
 		return newMemTombstones(), 0, nil
 	} else if err != nil {
 		return nil, 0, err

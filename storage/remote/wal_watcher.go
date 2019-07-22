@@ -170,6 +170,7 @@ func (w *WALWatcher) loop() {
 	defer close(w.done)
 
 	// We may encourter failures processing the WAL; we should wait and retry.
+	// 在处理WAL的时候我们可能会遇到失败的情况，我们应该停止并且重试
 	for !isClosed(w.quit) {
 		w.startTime = timestamp.FromTime(time.Now())
 		if err := w.run(); err != nil {
@@ -299,6 +300,7 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 	readTicker := time.NewTicker(readPeriod)
 	defer readTicker.Stop()
 
+	// 5s做一次为WALWatcher缓存的series做gc
 	checkpointTicker := time.NewTicker(checkpointPeriod)
 	defer checkpointTicker.Stop()
 
@@ -327,6 +329,8 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 			// Periodically check if there is a new checkpoint so we can garbage
 			// collect labels. As this is considered an optimisation, we ignore
 			// errors during checkpoint processing.
+			// 阶段性地检查有没有新的checkpoint，这样我们就能GC labels了
+			// 因为这是一个优化，因此我们忽略在处理checkpoint的时候产生的错误
 			if err := w.garbageCollectSeries(segmentNum); err != nil {
 				level.Warn(w.logger).Log("msg", "error process checkpoint", "err", err)
 			}
@@ -345,6 +349,7 @@ func (w *WALWatcher) watch(segmentNum int, tail bool) error {
 			err = w.readSegment(reader, segmentNum, tail)
 
 			// Ignore errors reading to end of segment whilst replaying the WAL.
+			// 如果我们正在replay WAL，忽略读取segment发生的错误
 			if !tail {
 				if err != nil && err != io.EOF {
 					level.Warn(w.logger).Log("msg", "ignoring error reading to end of segment, may have dropped data", "err", err)
@@ -389,6 +394,7 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 	}
 
 	if dir == "" || dir == w.lastCheckpoint {
+		// 如果没有checkpoint或者checkpoint没有变更，则直接返回
 		return nil
 	}
 	w.lastCheckpoint = dir
@@ -399,6 +405,7 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 	}
 
 	if index >= segmentNum {
+		// 如果当前的segment number小于等于index，则直接返回
 		level.Debug(w.logger).Log("msg", "current segment is behind the checkpoint, skipping reading of checkpoint", "current", fmt.Sprintf("%08d", segmentNum), "checkpoint", dir)
 		return nil
 	}
@@ -410,6 +417,7 @@ func (w *WALWatcher) garbageCollectSeries(segmentNum int) error {
 	}
 
 	// Clear series with a checkpoint or segment index # lower than the checkpoint we just read.
+	// 用checkpoint或者segment index清楚series
 	w.writer.SeriesReset(index)
 	return nil
 }
@@ -438,6 +446,8 @@ func (w *WALWatcher) readSegment(r *wal.LiveReader, segmentNum int, tail bool) e
 		case tsdb.RecordSamples:
 			// If we're not tailing a segment we can ignore any samples records we see.
 			// This speeds up replay of the WAL by > 10x.
+			// 如果我们不是在追一个segment，我们可以忽略任何我们看到的samples records
+			// 这让我们重放WAL的速度快10倍以上
 			if !tail {
 				break
 			}
@@ -486,6 +496,7 @@ func recordType(rt tsdb.RecordType) string {
 }
 
 // Read all the series records from a Checkpoint directory.
+// 从一个Checkpoint目录中读取所有的series records
 func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 	level.Debug(w.logger).Log("msg", "reading checkpoint", "dir", checkpointDir)
 	index, err := checkpointNum(checkpointDir)
@@ -494,6 +505,7 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 	}
 
 	// Ensure we read the whole contents of every segment in the checkpoint dir.
+	// 确保我们读取了checkpoint dir中每个segment的内容
 	segs, err := w.segments(checkpointDir)
 	if err != nil {
 		return errors.Wrap(err, "Unable to get segments checkpoint dir")

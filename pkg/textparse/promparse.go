@@ -250,6 +250,7 @@ func parseError(exp string, got token) error {
 
 // Next advances the parser to the next sample. It returns false if no
 // more samples were read or an error occurred.
+// Next将parser移动到下一个sample，它返回false，如果没有新的samples被读取或者错误发送
 func (p *PromParser) Next() (Entry, error) {
 	var err error
 

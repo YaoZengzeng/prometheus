@@ -35,6 +35,7 @@ type fanout struct {
 
 // NewFanout returns a new fan-out Storage, which proxies reads and writes
 // through to multiple underlying storages.
+// NewFanout返回一个新的fan-out Storage，它能够代理读写到多个远程的存储
 func NewFanout(logger log.Logger, primary Storage, secondaries ...Storage) Storage {
 	return &fanout{
 		logger:      logger,
@@ -87,6 +88,7 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	return NewMergeQuerier(primaryQuerier, queriers), nil
 }
 
+// fanout的Appender就是获取底层的各个Storage并且获取它们的Appender，组成一个fanoutAppender
 func (f *fanout) Appender() (Appender, error) {
 	primary, err := f.primary.Appender()
 	if err != nil {
@@ -152,6 +154,7 @@ func (f *fanoutAppender) AddFast(l labels.Labels, ref uint64, t int64, v float64
 	}
 
 	for _, appender := range f.secondaries {
+		// 依次调用每个appender的Add函数
 		if _, err := appender.Add(l, t, v); err != nil {
 			return err
 		}

@@ -30,26 +30,33 @@ var (
 
 // Storage ingests and manages samples, along with various indexes. All methods
 // are goroutine-safe. Storage implements storage.SampleAppender.
+// Storage吸收并且管理samples，以及各种的indexes
 type Storage interface {
 	Queryable
 
 	// StartTime returns the oldest timestamp stored in the storage.
+	// StartTime返回storage中存储的最老的时间戳
 	StartTime() (int64, error)
 
 	// Appender returns a new appender against the storage.
+	// Appender返回对于存储的一个新的appender
 	Appender() (Appender, error)
 
 	// Close closes the storage and all its underlying resources.
+	// Close关闭storage以及所有的底层资源
 	Close() error
 }
 
 // A Queryable handles queries against a storage.
+// Queryable处理对于一个storage的queries
 type Queryable interface {
 	// Querier returns a new Querier on the storage.
+	// Querier返回对于storage的一个新的Querier
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
 // Querier provides reading access to time series data.
+// Querier提供了对于时序数据的读访问
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
 	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
@@ -61,6 +68,7 @@ type Querier interface {
 	LabelNames() ([]string, Warnings, error)
 
 	// Close releases the resources of the Querier.
+	// Close释放一个Querier的资源
 	Close() error
 }
 
@@ -83,12 +91,14 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 }
 
 // Appender provides batched appends against a storage.
+// Appender提供对于一个storage的批量appends方式
 type Appender interface {
 	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
 	AddFast(l labels.Labels, ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
+	// Commit提交收集到的samples并且移除batch
 	Commit() error
 
 	Rollback() error

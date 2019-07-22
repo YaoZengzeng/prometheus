@@ -181,9 +181,11 @@ func main() {
 	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
+		// 最小的持久化时间为2小时
 	a.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
 
+		// 最大的持久化时间，默认是retention period的10%
 	a.Flag("storage.tsdb.max-block-duration",
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period.)").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
@@ -333,8 +335,10 @@ func main() {
 	level.Info(logger).Log("vm_limits", prom_runtime.VmLimits())
 
 	var (
+		// localStorage和remoteStorage都只是实现了Storage框架，具体的Storage实例还未创建
 		localStorage  = &tsdb.ReadyStorage{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline))
+		// fanoutStorage最终作为Storage接口被传递给各个Manager
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -407,6 +411,7 @@ func main() {
 	}
 
 	// Depends on cfg.web.ScrapeManager so needs to be after cfg.web.ScrapeManager = scrapeManager
+	// 依赖cfg.web.ScrapeManager，因此需要等待cfg.web.ScrapeManager = scrapeManager
 	webHandler := web.New(log.With(logger, "component", "web"), &cfg.web)
 
 	// Monitor outgoing connections on default transport with conntrack.
@@ -606,6 +611,7 @@ func main() {
 				case <-dbOpen:
 					break
 				// In case a shutdown is initiated before the dbOpen is released
+				// 为了防止shutdown在dbOpen被释放之前初始化
 				case <-cancel:
 					reloadReady.Close()
 					return nil
@@ -651,6 +657,7 @@ func main() {
 			func() error {
 				level.Info(logger).Log("msg", "Starting TSDB ...")
 				if cfg.tsdb.WALSegmentSize != 0 {
+					// wal的segment大小必须要在10M到256M之间
 					if cfg.tsdb.WALSegmentSize < 10*1024*1024 || cfg.tsdb.WALSegmentSize > 256*1024*1024 {
 						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
 					}

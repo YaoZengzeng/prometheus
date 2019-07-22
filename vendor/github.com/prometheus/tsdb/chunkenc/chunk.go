@@ -40,6 +40,7 @@ const (
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
+// Chunk维护了一系列的sample pairs，可以被迭代以及追加
 type Chunk interface {
 	Bytes() []byte
 	Encoding() Encoding
@@ -72,12 +73,14 @@ func (nopIterator) Next() bool           { return false }
 func (nopIterator) Err() error           { return nil }
 
 // Pool is used to create and reuse chunk references to avoid allocations.
+// Pool是用来创建以及重用chunc references来避免内存申请
 type Pool interface {
 	Put(Chunk) error
 	Get(e Encoding, b []byte) (Chunk, error)
 }
 
 // pool is a memory pool of chunk objects.
+// pool是chunk对象的一个memory pool
 type pool struct {
 	xor sync.Pool
 }

@@ -35,6 +35,7 @@ var ErrNotReady = errors.New("TSDB not ready")
 
 // ReadyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
+// ReadyStorage实现了Storage接口，从而允许在之后的某个时间点才设置真实的storage
 type ReadyStorage struct {
 	mtx sync.RWMutex
 	a   *adapter
@@ -101,6 +102,7 @@ func Adapter(db *tsdb.DB, startTimeMargin int64) storage.Storage {
 }
 
 // adapter implements a storage.Storage around TSDB.
+// adapter封装了TSDB实现了storage.Storage接口
 type adapter struct {
 	db              *tsdb.DB
 	startTimeMargin int64
@@ -108,6 +110,7 @@ type adapter struct {
 
 // Options of the DB storage.
 type Options struct {
+	// MinBlockDuration和MaxBlockDuration是head进行持久化存储的最小和最大时间间隔
 	// The timestamp range of head blocks after which they get persisted.
 	// It's the minimum duration of any persisted block.
 	MinBlockDuration model.Duration
@@ -178,6 +181,7 @@ func registerMetrics(db *tsdb.DB, r prometheus.Registerer) {
 // Open returns a new storage backed by a TSDB database that is configured for Prometheus.
 func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*tsdb.DB, error) {
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
+		// 最后MaxBlockDuration和MinBlockDuration都是两个小时
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
 	// Start with smallest block duration and create exponential buckets until the exceed the
@@ -193,6 +197,7 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 
 	db, err := tsdb.Open(path, l, r, &tsdb.Options{
 		WALSegmentSize:         int(opts.WALSegmentSize),
+		// 时间都是以毫秒计算
 		RetentionDuration:      uint64(time.Duration(opts.RetentionDuration).Seconds() * 1000),
 		MaxBytes:               int64(opts.MaxBytes),
 		BlockRanges:            rngs,

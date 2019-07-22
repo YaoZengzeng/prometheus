@@ -22,6 +22,7 @@ import (
 )
 
 func mmap(f *os.File, length int) ([]byte, error) {
+	// 打开方式是只读，共享
 	return unix.Mmap(int(f.Fd()), 0, length, unix.PROT_READ, unix.MAP_SHARED)
 }
 

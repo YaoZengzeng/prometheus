@@ -152,8 +152,10 @@ type Appendable interface {
 }
 
 // BlockMeta provides meta information about a block.
+// BlockMeta代表了一个block的信息
 type BlockMeta struct {
 	// Unique identifier for the block and its contents. Changes on compaction.
+	// ULID唯一地标记了block以及它的内容，随着压缩而改变
 	ULID ulid.ULID `json:"ulid"`
 
 	// MinTime and MaxTime specify the time range all samples
@@ -165,6 +167,7 @@ type BlockMeta struct {
 	Stats BlockStats `json:"stats,omitempty"`
 
 	// Information on compactions the block was created from.
+	// 关于这个block来源的压缩信息
 	Compaction BlockMetaCompaction `json:"compaction"`
 
 	// Version of the index format.
@@ -187,17 +190,22 @@ type BlockDesc struct {
 }
 
 // BlockMetaCompaction holds information about compactions a block went through.
+// BlockMetaCompaction包含了一个block经过的压缩的信息
 type BlockMetaCompaction struct {
 	// Maximum number of compaction cycles any source block has
 	// gone through.
+	// Block经历的最大的压缩周期的数目
 	Level int `json:"level"`
 	// ULIDs of all source head blocks that went into the block.
+	// 造就这个block的所有head blocks的ULIDs
 	Sources []ulid.ULID `json:"sources,omitempty"`
 	// Indicates that during compaction it resulted in a block without any samples
 	// so it should be deleted on the next reload.
+	// 在压缩过程中，它导致了这个block没有任何的samples，因此它在下一次reload的时候应该被删除
 	Deletable bool `json:"deletable,omitempty"`
 	// Short descriptions of the direct blocks that were used to create
 	// this block.
+	// 直接创建这个block的父block的简短的描述
 	Parents []BlockDesc `json:"parents,omitempty"`
 	Failed  bool        `json:"failed,omitempty"`
 }
@@ -267,6 +275,7 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 }
 
 // Block represents a directory of time series data covering a continuous time range.
+// Block代表了一个时序数据的目录，覆盖了一个连续的time range
 type Block struct {
 	mtx            sync.RWMutex
 	closing        bool
@@ -293,6 +302,7 @@ type Block struct {
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
+// OpenBlock打开目录中的block，它可以被传入一个chunc pool，它可以用于实例化chunk结构
 func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -306,6 +316,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 			err = merr.Err()
 		}
 	}()
+	// 读取元数据
 	meta, sizeMeta, err := readMetaFile(dir)
 	if err != nil {
 		return nil, err
@@ -317,6 +328,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	}
 	closers = append(closers, cr)
 
+	// 读取index文件的内容
 	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename))
 	if err != nil {
 		return nil, err
@@ -346,6 +358,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 }
 
 // Close closes the on-disk block. It blocks as long as there are readers reading from the block.
+// Close关闭磁盘中的block，只要有读者在读取block，它就会一直阻塞
 func (pb *Block) Close() error {
 	pb.mtx.Lock()
 	pb.closing = true
@@ -355,6 +368,7 @@ func (pb *Block) Close() error {
 
 	var merr tsdb_errors.MultiError
 
+	// 把chunk, index以及tombstone都关闭
 	merr.Add(pb.chunkr.Close())
 	merr.Add(pb.indexr.Close())
 	merr.Add(pb.tombstones.Close())

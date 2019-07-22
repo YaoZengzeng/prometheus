@@ -21,6 +21,7 @@ import (
 
 // Parser parses samples from a byte slice of samples in the official
 // Prometheus and OpenMetrics text exposition formats.
+// Parse从一个官方Prometheus或者OpenMetrics格式的byte slice中解析出samples
 type Parser interface {
 	// Series returns the bytes of the series, the timestamp if set, and the value
 	// of the current sample.

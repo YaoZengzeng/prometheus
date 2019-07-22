@@ -194,6 +194,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 		return nil, errors.Wrap(err, "error creating HTTP client")
 	}
 
+	// make函数直接调用make()创建slice
 	buffers := pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -208,9 +209,11 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
+		// 创建scrape cache
 		cache := newScrapeCache()
 		opts.target.setMetadataStore(cache)
 
+		// 所有的scrape loop共享buffer
 		return newScrapeLoop(
 			ctx,
 			opts.scraper,
@@ -221,6 +224,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app Appendable, jitterSeed uint64, 
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
 			func() storage.Appender {
+				// 调用app.Appender()获取appender
 				app, err := app.Appender()
 				if err != nil {
 					panic(err)
@@ -340,6 +344,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 // Sync converts target groups into actual scrape targets and synchronizes
 // the currently running scraper with the resulting set and returns all scraped and dropped targets.
+// Sync将target group转换为真正的scrape targets并且用resulting set同步正在运行的scraper，返回所有scraped以及dropped targets
 func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	start := time.Now()
 
@@ -372,6 +377,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 // sync takes a list of potentially duplicated targets, deduplicates them, starts
 // scrape loops for new targets, and stops scrape loops for disappeared targets.
 // It returns after all stopped scrape loops terminated.
+// sync对一系列可能重复的targets进行去重，为新的targets启动scrape loops，停止消失的targets的scrape loops
 func (sp *scrapePool) sync(targets []*Target) {
 	sp.mtx.Lock()
 	defer sp.mtx.Unlock()
@@ -416,6 +422,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 	var wg sync.WaitGroup
 
 	// Stop and remove old targets and scraper loops.
+	// 停止并且移除老的targets以及scraper loops
 	for hash := range sp.activeTargets {
 		if _, ok := uniqueTargets[hash]; !ok {
 			wg.Add(1)
@@ -432,9 +439,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 	}
 
 	// Wait for all potentially stopped scrapers to terminate.
+	// 等待所有潜在的stopped scrappers终止
 	// This covers the case of flapping targets. If the server is under high load, a new scraper
 	// may be active and tries to insert. The old scraper that didn't terminate yet could still
 	// be inserting a previous sample set.
+	// 这包含了flapping targets的情况，如果server处于高负载，一个新的scraper可能变成active并且试着插入
+	// 老的还没终止的scraper可能依然还在插入之前的sample set
 	wg.Wait()
 }
 
@@ -487,7 +497,9 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 }
 
 // appender returns an appender for ingested samples from the target.
+// appender返回一个appender用于从target摄取samples
 func appender(app storage.Appender, limit int) storage.Appender {
+	// timeLimitAppender仅仅对app做了一层封装
 	app = &timeLimitAppender{
 		Appender: app,
 		maxTime:  timestamp.FromTime(time.Now().Add(maxAheadTime)),
@@ -504,6 +516,7 @@ func appender(app storage.Appender, limit int) storage.Appender {
 }
 
 // A scraper retrieves samples and accepts a status report at the end.
+// 一个scraper接收samples并且在最后接收一个status report
 type scraper interface {
 	scrape(ctx context.Context, w io.Writer) (string, error)
 	report(start time.Time, dur time.Duration, err error)
@@ -542,6 +555,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 
 	resp, err := s.client.Do(s.req.WithContext(ctx))
 	if err != nil {
+		// 抓取失败，直接返回
 		return "", err
 	}
 	defer func() {
@@ -883,6 +897,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 
 	var last time.Time
 
+	// ticker每隔15s运行一次
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -909,7 +924,9 @@ mainLoop:
 			)
 		}
 
+		// 最开始lastScrape为0
 		b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
+		// 从pool中找到合适大小的slice并以此构建缓存
 		buf := bytes.NewBuffer(b)
 
 		contentType, scrapeErr := sl.scraper.scrape(scrapeCtx, buf)
@@ -932,6 +949,7 @@ mainLoop:
 
 		// A failed scrape is the same as an empty scrape,
 		// we still call sl.append to trigger stale markers.
+		// 一次失败的scrape和空的scrape相同，我们还是要调用sl.append来触发stale markers
 		total, added, seriesAdded, appErr := sl.append(b, contentType, start)
 		if appErr != nil {
 			level.Warn(sl.l).Log("msg", "append failed", "err", appErr)
@@ -942,12 +960,14 @@ mainLoop:
 			}
 		}
 
+		// 将byte slice重新放回缓存
 		sl.buffers.Put(b)
 
 		if scrapeErr == nil {
 			scrapeErr = appErr
 		}
 
+		// 每次抓取完成都要上报target的状态，up, scrap_duration_second等等
 		if err := sl.report(start, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "appending scrape report failed", "err", err)
 		}
@@ -975,6 +995,8 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// If the context is canceled, we presume the server is shutting down
 	// and will restart where is was. We do not attempt to write stale markers
 	// in this case.
+	// 抓取已经停止了，我们想要写入stale markers但是target可能被重建，因此我们在创建它们之前
+	// 等待两个scrape interval
 
 	if last.IsZero() {
 		// There never was a scrape, so there will be no stale markers.
@@ -992,6 +1014,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 
 	// Wait for when the next scrape would have been, if the target was recreated
 	// samples should have been ingested by now.
+	// 如果target被重建了，那么现在应该就被注入了
 	select {
 	case <-sl.ctx.Done():
 		return
@@ -1008,6 +1031,8 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
+	// 用一个empty scrape调用sl.append用来触发stale markers
+	// 如果target已经被重建并且抓取了，那么stale markers将失灵并且被忽略
 	if _, _, _, err := sl.append([]byte{}, "", staleTime); err != nil {
 		level.Error(sl.l).Log("msg", "stale append failed", "err", err)
 	}
@@ -1059,6 +1084,7 @@ func (sl *scrapeLoop) append(b []byte, contentType string, ts time.Time) (total,
 loop:
 	for {
 		var et textparse.Entry
+		// 读到头了的话，直接跳出循环
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
 				err = nil
@@ -1201,6 +1227,7 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
+			// Series不再暴露，标记为stale
 			_, err = app.Add(lset, defTime, math.Float64frombits(value.StaleNaN))
 			switch err {
 			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
@@ -1221,6 +1248,8 @@ loop:
 
 	// Only perform cache cleaning if the scrape was not empty.
 	// An empty scrape (usually) is used to indicate a failed scrape.
+	// 只有在scrape不是empty的时候才清除缓存
+	// 一个空的scrape通常意味着一个失败的scrape
 	sl.cache.iterDone(len(b) > 0)
 
 	return total, added, seriesAdded, nil
@@ -1241,12 +1270,14 @@ const (
 )
 
 func (sl *scrapeLoop) report(start time.Time, duration time.Duration, scraped, appended, seriesAdded int, err error) error {
+	// 根据err设置target的健康状态，并且设置target上次抓取的错误以及抓取的用时
 	sl.scraper.report(start, duration, err)
 
 	ts := timestamp.FromTime(start)
 
 	var health float64
 	if err == nil {
+		// 如果抓取没有发生错误，则health为1
 		health = 1
 	}
 	app := sl.appender()
@@ -1280,6 +1311,7 @@ func (sl *scrapeLoop) reportStale(start time.Time) error {
 
 	stale := math.Float64frombits(value.StaleNaN)
 
+	// 增加5个sample
 	if err := sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
 		app.Rollback()
 		return err
@@ -1303,6 +1335,7 @@ func (sl *scrapeLoop) reportStale(start time.Time) error {
 	return app.Commit()
 }
 
+// 增加report sample
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
 	ce, ok := sl.cache.get(s)
 	if ok {
@@ -1333,6 +1366,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	ref, err := app.Add(lset, t, v)
 	switch err {
 	case nil:
+		// 正确append则加入缓存
 		sl.cache.addRef(s, ref, lset, hash)
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:

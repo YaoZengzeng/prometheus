@@ -47,9 +47,12 @@ const (
 var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 
 // page is an in memory buffer used to batch disk writes.
+// page是一个内存中的缓存用于批量的磁盘写
 // Records bigger than the page size are split and flushed separately.
 // A flush is triggered when a single records doesn't fit the page size or
 // when the next record can't fit in the remaining free page space.
+// 大于page大小的records会被分开并且单独写
+// 一个flush会被触发，如果单个的record不合page大小或者，page剩余的空间不足以装下下一个record
 type page struct {
 	alloc   int
 	flushed int
@@ -61,6 +64,7 @@ func (p *page) remaining() int {
 }
 
 func (p *page) full() bool {
+	// 如果page里面剩下的空间小于recordHeaderSize，则返回full
 	return pageSize-p.alloc < recordHeaderSize
 }
 
@@ -161,7 +165,9 @@ type WAL struct {
 	segmentSize int
 	mtx         sync.RWMutex
 	segment     *Segment // Active segment.
+	// donePages是已经写入segment的page的数目
 	donePages   int      // Pages written to the segment.
+	// page是当前活跃的page
 	page        *page    // Active page.
 	stopc       chan chan struct{}
 	actorc      chan func()
@@ -184,6 +190,7 @@ func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool
 
 // NewSize returns a new WAL over the given directory.
 // New segments are created with the specified size.
+// NewSize返回一个给定目录的新的WAL，新的segments用指定的大小被创建
 func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WAL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
@@ -239,15 +246,18 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		return nil, errors.Wrap(err, "get segment range")
 	}
 	// If some segments already exist create one with a higher index than the last segment.
+	// 如果已经有一些segments存在了，则创建一个比last segment更大的index
 	if j != -1 {
 		writeSegmentIndex = j + 1
 	}
 
+	// 创建segment
 	segment, err := CreateSegment(w.dir, writeSegmentIndex)
 	if err != nil {
 		return nil, err
 	}
 
+	// 设置segment
 	if err := w.setSegment(segment); err != nil {
 		return nil, err
 	}
@@ -280,6 +290,7 @@ Loop:
 		}
 	}
 	// Drain and process any remaining functions.
+	// 榨干并且运行任何剩下的函数
 	for f := range w.actorc {
 		f()
 	}
@@ -411,13 +422,16 @@ func (w *WAL) NextSegment() error {
 }
 
 // nextSegment creates the next segment and closes the previous one.
+// nextSegment创建下一个segment并且关闭之前的一个
 func (w *WAL) nextSegment() error {
 	// Only flush the current page if it actually holds data.
+	// 如果当前的page中有数据，则flush当前的page
 	if w.page.alloc > 0 {
 		if err := w.flushPage(true); err != nil {
 			return err
 		}
 	}
+	// 创建下一个segment
 	next, err := CreateSegment(w.dir, w.segment.Index()+1)
 	if err != nil {
 		return errors.Wrap(err, "create new segment file")
@@ -428,7 +442,9 @@ func (w *WAL) nextSegment() error {
 	}
 
 	// Don't block further writes by fsyncing the last segment.
+	// 对上一个segment进行fsyncing从而不要阻塞之后对写操作
 	w.actorc <- func() {
+		// fsync()主要对上一个segment进行同步并且记录同步所需的时间
 		if err := w.fsync(prev); err != nil {
 			level.Error(w.logger).Log("msg", "sync previous segment", "err", err)
 		}
@@ -455,6 +471,8 @@ func (w *WAL) setSegment(segment *Segment) error {
 // flushPage writes the new contents of the page to disk. If no more records will fit into
 // the page, the remaining bytes will be set to zero and a new page will be started.
 // If clear is true, this is enforced regardless of how many bytes are left in the page.
+// flushPage将page中新的内容写到磁盘里，如果page里放不下新的records，page里剩余的bytes会被设置为0并且会启动一个新的page
+// 如果clear为true，则强行进行flush，不管page里面还留了多少个字节
 func (w *WAL) flushPage(clear bool) error {
 	w.pageFlushes.Inc()
 
@@ -464,6 +482,7 @@ func (w *WAL) flushPage(clear bool) error {
 	// No more data will fit into the page or an implicit clear.
 	// Enqueue and clear it.
 	if clear {
+		// 直接将p.alloc设置为pageSize
 		p.alloc = pageSize // Write till end of page.
 	}
 	n, err := w.segment.Write(p.buf[p.flushed:p.alloc])
@@ -473,8 +492,10 @@ func (w *WAL) flushPage(clear bool) error {
 	p.flushed += n
 
 	// We flushed an entire page, prepare a new one.
+	// 我们将整个page都flush了，准备一个新的
 	if clear {
 		for i := range p.buf {
+			// 对page的每个字符都清零
 			p.buf[i] = 0
 		}
 		p.alloc = 0
@@ -489,6 +510,7 @@ func (w *WAL) flushPage(clear bool) error {
 // [ 4 bits unallocated] [1 bit snappy compression flag] [ 3 bit record type ]
 
 const (
+	// 第四个位表示是否进行压缩
 	snappyMask  = 1 << 3
 	recTypeMask = snappyMask - 1
 )
@@ -530,7 +552,9 @@ func (w *WAL) pagesPerSegment() int {
 
 // Log writes the records into the log.
 // Multiple records can be passed at once to reduce writes and increase throughput.
+// Log将records写入log，多个records可以一次性被写入从而增加吞吐
 func (w *WAL) Log(recs ...[]byte) error {
+	// 在记录之前直接上锁
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	// Callers could just implement their own list record format but adding
@@ -547,6 +571,7 @@ func (w *WAL) Log(recs ...[]byte) error {
 // - the final record of a batch
 // - the record is bigger than the page size
 // - the current page is full.
+// log将record写入page，在必要的时候写入内存或者创建新的segment
 func (w *WAL) log(rec []byte, final bool) error {
 	// When the last page flush failed the page will remain full.
 	// When the page is full, need to flush it before trying to add more records to it.
@@ -558,10 +583,13 @@ func (w *WAL) log(rec []byte, final bool) error {
 	// If the record is too big to fit within the active page in the current
 	// segment, terminate the active segment and advance to the next one.
 	// This ensures that records do not cross segment boundaries.
+	// 如果record大于当前的segment中活跃的page，终结active segment并且移动到下一个
+	// 这确保了records不会跨越segment
 	left := w.page.remaining() - recordHeaderSize                                   // Free space in the active page.
 	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
 	if len(rec) > left {
+		// 如果一个rec的大小比一个segment还要大怎么办？
 		if err := w.nextSegment(); err != nil {
 			return err
 		}
@@ -572,6 +600,8 @@ func (w *WAL) log(rec []byte, final bool) error {
 		// The snappy library uses `len` to calculate if we need a new buffer.
 		// In order to allocate as few buffers as possible make the length
 		// equal to the capacity.
+		// snappy library使用`len`来计算我们是否需要一个新的buffer
+		// 为了尽量少地申请buffer，让buffer的length和capacity相等
 		w.snappyBuf = w.snappyBuf[:cap(w.snappyBuf)]
 		w.snappyBuf = snappy.Encode(w.snappyBuf, rec)
 		if len(w.snappyBuf) < len(rec) {
@@ -643,6 +673,7 @@ func (w *WAL) Segments() (first, last int, err error) {
 }
 
 // Truncate drops all segments before i.
+// 截取所有在i之前的segments
 func (w *WAL) Truncate(i int) (err error) {
 	w.truncateTotal.Inc()
 	defer func() {
@@ -658,6 +689,7 @@ func (w *WAL) Truncate(i int) (err error) {
 		if r.index >= i {
 			break
 		}
+		// 直接将wal的segment文件移除
 		if err = os.Remove(filepath.Join(w.dir, r.name)); err != nil {
 			return err
 		}
@@ -673,17 +705,21 @@ func (w *WAL) fsync(f *Segment) error {
 }
 
 // Close flushes all writes and closes active segment.
+// Close flushes所有的写并且关闭活跃的segment
 func (w *WAL) Close() (err error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
 	if w.closed {
+		// 如果wal已经被关闭，则返回错误
 		return errors.New("wal already closed")
 	}
 
 	// Flush the last page and zero out all its remaining size.
+	// Flush最新的page并且对它所有剩余的部分清零	
 	// We must not flush an empty page as it would falsely signal
 	// the segment is done if we start writing to it again after opening.
+	// 我们一定不能flush一个空的page，因为它会错误地表明segment已经结束了，如果我们在打开之后又重新写
 	if w.page.alloc > 0 {
 		if err := w.flushPage(true); err != nil {
 			return err
@@ -694,9 +730,11 @@ func (w *WAL) Close() (err error) {
 	w.stopc <- donec
 	<-donec
 
+	// 同步segment
 	if err = w.fsync(w.segment); err != nil {
 		level.Error(w.logger).Log("msg", "sync previous segment", "err", err)
 	}
+	// 关闭segment
 	if err := w.segment.Close(); err != nil {
 		level.Error(w.logger).Log("msg", "close previous segment", "err", err)
 	}
@@ -745,6 +783,8 @@ func NewSegmentsReader(dir string) (io.ReadCloser, error) {
 
 // NewSegmentsRangeReader returns a new reader over the given WAL segment ranges.
 // If first or last are -1, the range is open on the respective end.
+// NewSegmentsRangeReader返回对于给定的WAL segment ranges的一个新的reader
+// 如果first或者last为-1，则range在对应的一端是开的
 func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 	var segs []*Segment
 
@@ -761,6 +801,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 			if sgmRange.Last >= 0 && r.index > sgmRange.Last {
 				break
 			}
+			// 打开各个segment文件
 			s, err := OpenReadSegment(filepath.Join(sgmRange.Dir, r.name))
 			if err != nil {
 				return nil, errors.Wrapf(err, "open segment:%v in dir:%v", r.name, sgmRange.Dir)
@@ -768,6 +809,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 			segs = append(segs, s)
 		}
 	}
+	// 获取所有的segment range
 	return NewSegmentBufReader(segs...), nil
 }
 
@@ -776,15 +818,22 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 // corruption reporting.  We have to be careful not to increment curr too
 // early, as it is used by Reader.Err() to tell Repair which segment is corrupt.
 // As such we pad the end of non-page align segments with zeros.
+// segmentBufReader是一个带缓存的reader，它会读入多个pages
+// 它的主要用途是我们能够追踪segment以及offset用于corruption reporting
+// 我们需要注意的是，不要太早地增加curr，因为它会由Reader.Err()使用来告诉Repair，哪个segment坏了
+// 这样的话，我们用0填充非页对齐的segments
 type segmentBufReader struct {
 	buf  *bufio.Reader
 	segs []*Segment
+	// cur是segs的下标
 	cur  int // Index into segs.
+	// off是读取的数据在当前的segment的下标
 	off  int // Offset of read data into current segment.
 }
 
 func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	return &segmentBufReader{
+		// 缓存大小为0.5M
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
 	}
@@ -805,30 +854,36 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 	r.off += n
 
 	// If we succeeded, or hit a non-EOF, we can stop.
+	// 如果我们成功了，或者遇到了了一个非EOF的错误，直接返回
 	if err == nil || err != io.EOF {
 		return n, err
 	}
 
 	// We hit EOF; fake out zero padding at the end of short segments, so we
 	// don't increment curr too early and report the wrong segment as corrupt.
+	// 如果我们遇到了EOF，且当前读取的segment的位移和page size不对齐
 	if r.off%pageSize != 0 {
 		i := 0
+		// 直到和pagesize对齐或者到达b的大小为止
 		for ; n+i < len(b) && (r.off+i)%pageSize != 0; i++ {
 			b[n+i] = 0
 		}
 
 		// Return early, even if we didn't fill b.
+		// 尽早返回，即使我们没有填满b
 		r.off += i
 		return n + i, nil
 	}
 
 	// There is no more deta left in the curr segment and there are no more
 	// segments left.  Return EOF.
+	// 如果当前的segment没有数据了并且没有更多的segments了，则返回EOF
 	if r.cur+1 >= len(r.segs) {
 		return n, io.EOF
 	}
 
 	// Move to next segment.
+	// 移动到下一个segment
 	r.cur++
 	r.off = 0
 	r.buf.Reset(r.segs[r.cur])

@@ -51,6 +51,7 @@ func ExponentialBlockRanges(minSize int64, steps, stepSize int) []int64 {
 
 // Compactor provides compaction against an underlying storage
 // of time series data.
+// Compactor提供了对于时序数据的压缩
 type Compactor interface {
 	// Plan returns a set of directories that can be compacted concurrently.
 	// The directories can be overlapping.
@@ -59,16 +60,24 @@ type Compactor interface {
 
 	// Write persists a Block into a directory.
 	// No Block is written when resulting Block has 0 samples, and returns empty ulid.ULID{}.
+	// Write将一个Block持久化到一个目录中
+	// 当resulting Block有着0个samples时，没有Block会被写入，并且返回空的ULID
 	Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error)
 
 	// Compact runs compaction against the provided directories. Must
 	// only be called concurrently with results of Plan().
+	// Compact对提供的目录运行压缩，只能对Plan()返回的结果并行调用
 	// Can optionally pass a list of already open blocks,
 	// to avoid having to reopen them.
+	// 可以可选地提供一系列已经打开的blocks，从而避免重新打开它们
 	// When resulting Block has 0 samples
 	//  * No block is written.
 	//  * The source dirs are marked Deletable.
 	//  * Returns empty ulid.ULID{}.
+	// 当Block没有samples时：
+	//  * 没有block被写入
+	//	* 源目录被标记为Deletable
+	//	* 返回空的ulid.ULID
 	Compact(dest string, dirs []string, open []*Block) (ulid.ULID, error)
 }
 

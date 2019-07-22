@@ -63,6 +63,7 @@ type Options struct {
 	WALSegmentSize int
 
 	// Duration of persisted data to keep.
+	// 持久化数据保存的时长
 	RetentionDuration uint64
 
 	// Maximum number of bytes in blocks to be retained.
@@ -70,9 +71,11 @@ type Options struct {
 	// NOTE: For proper storage calculations need to consider
 	// the size of the WAL folder which is not added when calculating
 	// the current size of the database.
+	// MaxBytes是保存的blocks的字节数
 	MaxBytes int64
 
 	// The sizes of the Blocks.
+	// blocks的大小
 	BlockRanges []int64
 
 	// NoLockfile disables creation and consideration of a lock file.
@@ -202,6 +205,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.timeRetentionCount = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_time_retentions_total",
+		// 因为maximum time limit达到而被删除的blocks的数目
 		Help: "The number of times that blocks were deleted because the maximum time limit was exceeded.",
 	})
 	m.compactionsSkipped = prometheus.NewCounter(prometheus.CounterOpts{
@@ -266,6 +270,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		return nil, err
 	}
 	// Migrate old WAL if one exists.
+	// 转换老的格式的WAL
 	if err := MigrateWAL(l, filepath.Join(dir, "wal")); err != nil {
 		return nil, errors.Wrap(err, "migrate WAL")
 	}
@@ -277,6 +282,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		compactc:    make(chan struct{}, 1),
 		donec:       make(chan struct{}),
 		stopc:       make(chan struct{}),
+		// autoCompact为true
 		autoCompact: true,
 		chunkPool:   chunkenc.NewPool(),
 	}
@@ -295,6 +301,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	// 创建compactor
 	db.compactor, err = NewLeveledCompactor(ctx, r, l, opts.BlockRanges, db.chunkPool)
 	if err != nil {
 		cancel()
@@ -310,36 +317,44 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
+		// 创建wal
 		wlog, err = wal.NewSize(l, r, filepath.Join(dir, "wal"), segmentSize, opts.WALCompression)
 		if err != nil {
 			return nil, err
 		}
 	}
 
+	// 创建head
 	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0])
 	if err != nil {
 		return nil, err
 	}
 
+	// 重新加载db
 	if err := db.reload(); err != nil {
 		return nil, err
 	}
 	// Set the min valid time for the ingested samples
 	// to be no lower than the maxt of the last block.
+	// 设置摄入的samples的min valid time并且这个时间不能比上一个block的maxt低
 	blocks := db.Blocks()
 	minValidTime := int64(math.MinInt64)
 	if len(blocks) > 0 {
+		// 将minValidTime设置成上一个block的MaxTime
 		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
 	}
 
+	// 初始化head
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
 		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", err)
+		// 对损坏的WAL进行修复
 		if err := wlog.Repair(initErr); err != nil {
 			return nil, errors.Wrap(err, "repair corrupted WAL")
 		}
 	}
 
+	// db.run()主要是针对触发自动压缩
 	go db.run()
 
 	return db, nil
@@ -362,9 +377,11 @@ func (db *DB) run() {
 		case <-time.After(backoff):
 		}
 
+		// 实际触发的时间是2 * backoff + 1 Minute
 		select {
 		case <-time.After(1 * time.Minute):
 			select {
+			// 每隔1分钟触发一次compact
 			case db.compactc <- struct{}{}:
 			default:
 			}
@@ -373,6 +390,7 @@ func (db *DB) run() {
 
 			db.autoCompactMtx.Lock()
 			if db.autoCompact {
+				// 对于db全局的压缩
 				if err := db.compact(); err != nil {
 					level.Error(db.logger).Log("msg", "compaction failed", "err", err)
 					backoff = exponential(backoff, 1*time.Second, 1*time.Minute)
@@ -390,12 +408,14 @@ func (db *DB) run() {
 }
 
 // Appender opens a new appender against the database.
+// Appender对数据库打开一个新的appender
 func (db *DB) Appender() Appender {
 	return dbAppender{db: db, Appender: db.head.Appender()}
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
 // if necessary.
+// dbAppender封装了DB的header appender并且在commit的时候触发压缩，如果有必要的话
 type dbAppender struct {
 	Appender
 	db *DB
@@ -406,6 +426,7 @@ func (a dbAppender) Commit() error {
 
 	// We could just run this check every few minutes practically. But for benchmarks
 	// and high frequency use cases this is the safer way.
+	// 我们几乎每几分钟运行一次check，但是对于benchmark或者高频率的场景来说，这是更安全的方式
 	if a.db.head.compactable() {
 		select {
 		case a.db.compactc <- struct{}{}:
@@ -418,10 +439,13 @@ func (a dbAppender) Commit() error {
 // Compact data if possible. After successful compaction blocks are reloaded
 // which will also trigger blocks to be deleted that fall out of the retention
 // window.
+// 如果可能的话对数据进行压缩，在成功压缩之后，blocks会被重载，它会触发超出时间窗口以外的blocks被删除
 // If no blocks are compacted, the retention window state doesn't change. Thus,
 // this is sufficient to reliably delete old data.
+// 如果没有数据被压缩，则压缩窗口的状态不会改变，因此，这对于有效地删除老的数据是足够的了
 // Old blocks are only deleted on reload based on the new block's parent information.
 // See DB.reload documentation for further information.
+// Old blocks只有在reload的时候基于新的block的parent information才会被删除
 func (db *DB) compact() (err error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
@@ -525,6 +549,9 @@ func (db *DB) getBlock(id ulid.ULID) (*Block, bool) {
 
 // reload blocks and trigger head truncation if new blocks appeared.
 // Blocks that are obsolete due to replacement or retention will be deleted.
+// 如果有新的blocks出现，reload会阻塞并且触发head truncation
+// Blocks因为replacement或者retention而过时的会被删除
+// 重新加载block并且移除可以移除的block
 func (db *DB) reload() (err error) {
 	defer func() {
 		if err != nil {
@@ -546,6 +573,7 @@ func (db *DB) reload() (err error) {
 	// By creating blocks with their parents, we can pick up the deletion where it left off during a crash.
 	for _, block := range loadable {
 		for _, b := range block.Meta().Compaction.Parents {
+			// 如果block是可加载的，则它的parent可以从corrupted以及deletable中移除
 			delete(corrupted, b.ULID)
 			deletable[b.ULID] = nil
 		}
@@ -554,6 +582,7 @@ func (db *DB) reload() (err error) {
 		// Close all new blocks to release the lock for windows.
 		for _, block := range loadable {
 			if _, loaded := db.getBlock(block.Meta().ULID); !loaded {
+				// 如果loadable中的block没有被加载，则直接关闭
 				block.Close()
 			}
 		}
@@ -561,12 +590,14 @@ func (db *DB) reload() (err error) {
 	}
 
 	// All deletable blocks should not be loaded.
+	// 所有可以被移除的blockd都不应该被加载
 	var (
 		bb         []*Block
 		blocksSize int64
 	)
 	for _, block := range loadable {
 		if _, ok := deletable[block.Meta().ULID]; ok {
+			// 如果ULID相同，则更新deletable中的block
 			deletable[block.Meta().ULID] = block
 			continue
 		}
@@ -577,6 +608,7 @@ func (db *DB) reload() (err error) {
 	loadable = bb
 	db.metrics.blocksBytes.Set(float64(blocksSize))
 
+	// 将block从老到新进行排序
 	sort.Slice(loadable, func(i, j int) bool {
 		return loadable[i].Meta().MinTime < loadable[j].Meta().MinTime
 	})
@@ -587,6 +619,7 @@ func (db *DB) reload() (err error) {
 	}
 
 	// Swap new blocks first for subsequently created readers to be seen.
+	// 首先交换blocks，让之后创建的reader能够看到
 	db.mtx.Lock()
 	oldBlocks := db.blocks
 	db.blocks = loadable
@@ -602,6 +635,7 @@ func (db *DB) reload() (err error) {
 
 	for _, b := range oldBlocks {
 		if _, ok := deletable[b.Meta().ULID]; ok {
+			// 用oldBlocks更新deletable
 			deletable[b.Meta().ULID] = b
 		}
 	}
@@ -612,12 +646,14 @@ func (db *DB) reload() (err error) {
 
 	// Garbage collect data in the head if the most recent persisted block
 	// covers data of its current time range.
+	// GC head中的数据，如果最近持久化的block覆盖了它当前的time range的数据
 	if len(loadable) == 0 {
 		return nil
 	}
 
 	maxt := loadable[len(loadable)-1].Meta().MaxTime
 
+	// 根据最新持久化的块的maxt来对head进行截取
 	return errors.Wrap(db.head.Truncate(maxt), "head truncate failed")
 }
 
@@ -629,6 +665,7 @@ func (db *DB) openBlocks() (blocks []*Block, corrupted map[ulid.ULID]error, err 
 
 	corrupted = make(map[ulid.ULID]error)
 	for _, dir := range dirs {
+		// 从block dir中读取元数据
 		meta, _, err := readMetaFile(dir)
 		if err != nil {
 			level.Error(db.logger).Log("msg", "not a block dir", "dir", dir)
@@ -636,10 +673,12 @@ func (db *DB) openBlocks() (blocks []*Block, corrupted map[ulid.ULID]error, err 
 		}
 
 		// See if we already have the block in memory or open it otherwise.
+		// 看看我们在内存中是否已经又了block，否则打开它
 		block, ok := db.getBlock(meta.ULID)
 		if !ok {
 			block, err = OpenBlock(db.logger, dir, db.chunkPool)
 			if err != nil {
+				// 打开过程中遇到错误的block都设置为corrupted
 				corrupted[meta.ULID] = err
 				continue
 			}
@@ -650,11 +689,14 @@ func (db *DB) openBlocks() (blocks []*Block, corrupted map[ulid.ULID]error, err 
 }
 
 // deletableBlocks returns all blocks past retention policy.
+// deletableBlocks返回所有已经过了retention policy的blocks
 func (db *DB) deletableBlocks(blocks []*Block) map[ulid.ULID]*Block {
 	deletable := make(map[ulid.ULID]*Block)
 
 	// Sort the blocks by time - newest to oldest (largest to smallest timestamp).
 	// This ensures that the retentions will remove the oldest  blocks.
+	// 按照时间对blocks进行排序 - 最新的到最老的（即从最大的时间戳到最小的时间戳）
+	// 这确保retention会移除最老的blocks
 	sort.Slice(blocks, func(i, j int) bool {
 		return blocks[i].Meta().MaxTime > blocks[j].Meta().MaxTime
 	})
@@ -665,10 +707,12 @@ func (db *DB) deletableBlocks(blocks []*Block) map[ulid.ULID]*Block {
 		}
 	}
 
+	// 将所有超过时间范围的block设置为deletable
 	for ulid, block := range db.beyondTimeRetention(blocks) {
 		deletable[ulid] = block
 	}
 
+	// 将超过体积的block设置为deletable
 	for ulid, block := range db.beyondSizeRetention(blocks) {
 		deletable[ulid] = block
 	}
@@ -690,6 +734,7 @@ func (db *DB) beyondTimeRetention(blocks []*Block) (deleteable map[ulid.ULID]*Bl
 			for _, b := range blocks[i:] {
 				deleteable[b.meta.ULID] = b
 			}
+			// 又成功进行了一次retention
 			db.metrics.timeRetentionCount.Inc()
 			break
 		}
@@ -709,6 +754,7 @@ func (db *DB) beyondSizeRetention(blocks []*Block) (deleteable map[ulid.ULID]*Bl
 		blocksSize += block.Size()
 		if blocksSize > db.opts.MaxBytes {
 			// Add this and all following blocks for deletion.
+			// 将所有超过体积的block都进行retention
 			for _, b := range blocks[i:] {
 				deleteable[b.meta.ULID] = b
 			}
@@ -722,6 +768,8 @@ func (db *DB) beyondSizeRetention(blocks []*Block) (deleteable map[ulid.ULID]*Bl
 // deleteBlocks closes and deletes blocks from the disk.
 // When the map contains a non nil block object it means it is loaded in memory
 // so needs to be closed first as it might need to wait for pending readers to complete.
+// deleteBlocks关闭并且将blocks从磁盘中移除，当map包含一个非nil的block对象，这意味着它加载在内存中
+// 因此需要首先关闭它，因为它可能需要等待pending reader读取完毕
 func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 	for ulid, block := range blocks {
 		if block != nil {
@@ -737,6 +785,7 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 }
 
 // validateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
+// validateBlockSequence返回错误，如果给定的block的元文件表明一些block在序号上重合了
 func validateBlockSequence(bs []*Block) error {
 	if len(bs) <= 1 {
 		return nil
@@ -749,6 +798,7 @@ func validateBlockSequence(bs []*Block) error {
 
 	overlaps := OverlappingBlocks(metas)
 	if len(overlaps) > 0 {
+		// 两个block的time range有没有重合
 		return errors.Errorf("block time ranges overlap: %s", overlaps)
 	}
 

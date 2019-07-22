@@ -166,6 +166,7 @@ func (t *Time) UnmarshalJSON(b []byte) error {
 
 // Duration wraps time.Duration. It is used to parse the custom duration format
 // from YAML.
+// Duration是对time.Duration的封装，它用来从YAML中解析自定义的duration format
 // This type should not propagate beyond the scope of input/output processing.
 type Duration time.Duration
 

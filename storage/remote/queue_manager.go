@@ -167,6 +167,7 @@ type QueueManager struct {
 	client         StorageClient
 	watcher        *WALWatcher
 
+	// seriesLabels维持series ref到labels集合的映射
 	seriesLabels         map[uint64][]prompb.Label
 	seriesSegmentIndexes map[uint64]int
 	droppedSeries        map[uint64]struct{}
@@ -224,7 +225,9 @@ func NewQueueManager(logger log.Logger, walDir string, samplesIn *ewmaRate, cfg 
 		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 	}
 
+	// 创建wal watcher
 	t.watcher = NewWALWatcher(logger, name, t, walDir)
+	// 创建shard
 	t.shards = t.newShards()
 
 	return t
@@ -282,6 +285,7 @@ outer:
 
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
+// Start启动queue manager向远程存储发送samples
 func (t *QueueManager) Start() {
 	// Setup the QueueManagers metrics. We do this here rather than in the
 	// constructor because of the ordering of creating Queue Managers's, stopping them,
@@ -304,6 +308,7 @@ func (t *QueueManager) Start() {
 	t.shardCapacity.Set(float64(t.cfg.Capacity))
 	t.pendingSamplesMetric.Set(0)
 
+	// 启动shards和wal watcher
 	t.shards.start(t.numShards)
 	t.watcher.Start()
 
@@ -345,6 +350,7 @@ func (t *QueueManager) Stop() {
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
+// StoreSeries追踪我们知道的series，可以在发送samples到remote的时候进行查询
 func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 	for _, s := range series {
 		ls := processExternalLabels(s.Labels, t.externalLabels)
@@ -362,6 +368,7 @@ func (t *QueueManager) StoreSeries(series []tsdb.RefSeries, index int) {
 		if orig, ok := t.seriesLabels[s.Ref]; ok {
 			release(orig)
 		}
+		// 建立s.Ref和labels的映射关系
 		t.seriesLabels[s.Ref] = labels
 	}
 }
@@ -564,6 +571,7 @@ type shards struct {
 }
 
 // start the shards; must be called before any call to enqueue.
+// 启动shards，必须在调用任何enqueue之前被调用
 func (s *shards) start(n int) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
@@ -637,6 +645,7 @@ func (s *shards) enqueue(ref uint64, sample prompb.TimeSeries) bool {
 	select {
 	case <-s.softShutdown:
 		return false
+		// 如果队列满，则始终阻塞
 	case s.queues[shard] <- sample:
 		return true
 	}
@@ -745,6 +754,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		return err
 	}
 
+	// 如果是可恢复的错误，则始终进行重试
 	for {
 		select {
 		case <-ctx.Done():
@@ -762,6 +772,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 			return nil
 		}
 
+		// 如果不是可以恢复的错误，就直接返回
 		if _, ok := err.(recoverableError); !ok {
 			return err
 		}
