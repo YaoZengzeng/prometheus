@@ -27,6 +27,7 @@ import (
 var allPostingsKey = labels.Label{}
 
 // AllPostingsKey returns the label key that is used to store the postings list of all existing IDs.
+// AllPostingsKey返回label key用于存储所有已经存在的ID的列表
 func AllPostingsKey() (name, value string) {
 	return allPostingsKey.Name, allPostingsKey.Value
 }
@@ -35,6 +36,7 @@ func AllPostingsKey() (name, value string) {
 // to out of order.
 // ensureOrder() must be called once before any reads are done. This allows for quick
 // unordered batch fills on startup.
+// MemPosting映射了key value对和包含它们的series id
 type MemPostings struct {
 	mtx     sync.RWMutex
 	m       map[string]map[string][]uint64
@@ -211,17 +213,21 @@ func (p *MemPostings) Iter(f func(labels.Label, Postings) error) error {
 }
 
 // Add a label set to the postings index.
+// 将一个label set加入到posting index中
 func (p *MemPostings) Add(id uint64, lset labels.Labels) {
 	p.mtx.Lock()
 
 	for _, l := range lset {
 		p.addFor(id, l)
 	}
+	// allPostingsKey和所有的id相关联
+	// 所有的id都会加入到这个allPostingKeys中
 	p.addFor(id, allPostingsKey)
 
 	p.mtx.Unlock()
 }
 
+// label name -> label value -> id
 func (p *MemPostings) addFor(id uint64, l labels.Label) {
 	nm, ok := p.m[l.Name]
 	if !ok {
@@ -232,12 +238,15 @@ func (p *MemPostings) addFor(id uint64, l labels.Label) {
 	nm[l.Value] = list
 
 	if !p.ordered {
+		// 如果一开始就不是有序的，就直接返回
 		return
 	}
 	// There is no guarantee that no higher ID was inserted before as they may
 	// be generated independently before adding them to postings.
 	// We repair order violations on insert. The invariant is that the first n-1
 	// items in the list are already sorted.
+	// 不能确保没有更高的id在之前被插入，因为它们在加入postings之前都是被独立创建的
+	// 我们在插入的时候修复order violation，可知前n-1个items已经排好序了
 	for i := len(list) - 1; i >= 1; i-- {
 		if list[i] >= list[i-1] {
 			break
@@ -255,6 +264,7 @@ func ExpandPostings(p Postings) (res []uint64, err error) {
 }
 
 // Postings provides iterative access over a postings list.
+// Postings提供对于一个postings list的迭代访问
 type Postings interface {
 	// Next advances the iterator and returns true if another value was found.
 	Next() bool
@@ -264,6 +274,7 @@ type Postings interface {
 	Seek(v uint64) bool
 
 	// At returns the value at the current iterator position.
+	// At返回当前iterator位置的值
 	At() uint64
 
 	// Err returns the last error of the iterator.
@@ -271,6 +282,7 @@ type Postings interface {
 }
 
 // errPostings is an empty iterator that always errors.
+// errPostings是一个空的iterator，总是返回false
 type errPostings struct {
 	err error
 }
@@ -296,6 +308,7 @@ func ErrPostings(err error) Postings {
 
 // Intersect returns a new postings list over the intersection of the
 // input postings.
+// Intersect返回一个新的postings list，对于输入的postings的交集
 func Intersect(its ...Postings) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
@@ -504,6 +517,7 @@ func (it mergedPostings) Err() error {
 
 // Without returns a new postings list that contains all elements from the full list that
 // are not in the drop list.
+// Without返回一个新的postings list，包含full list中不在drop list的所有elements
 func Without(full, drop Postings) Postings {
 	if full == EmptyPostings() {
 		return EmptyPostings()
@@ -589,6 +603,7 @@ func (rp *removedPostings) Err() error {
 }
 
 // ListPostings implements the Postings interface over a plain list.
+// ListPostings在一个plain list上实现了Postings接口
 type ListPostings struct {
 	list []uint64
 	cur  uint64

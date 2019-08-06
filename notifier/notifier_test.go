@@ -253,12 +253,14 @@ func TestExternalLabels(t *testing.T) {
 	}, nil)
 
 	// This alert should get the external label attached.
+	// 这个alert应该被加上external label
 	h.Send(&Alert{
 		Labels: labels.FromStrings("alertname", "test"),
 	})
 
 	// This alert should get the external label attached, but then set to "c"
 	// through relabelling.
+	// 这个alert应该被加上external label，但是会被"a"对应的value会被设置为"c"
 	h.Send(&Alert{
 		Labels: labels.FromStrings("alertname", "externalrelabelthis"),
 	})

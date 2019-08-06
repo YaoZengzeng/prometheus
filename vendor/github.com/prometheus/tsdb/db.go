@@ -456,6 +456,7 @@ func (db *DB) compact() (err error) {
 	}()
 	// Check whether we have pending head blocks that are ready to be persisted.
 	// They have the highest priority.
+	// 检查我们是否有pending head blocks等待被持久化，它们有着最高的优先级
 	for {
 		select {
 		case <-db.stopc:
@@ -480,6 +481,7 @@ func (db *DB) compact() (err error) {
 			// from the block interval here.
 			maxt: maxt - 1,
 		}
+		// 对head block进行持久化
 		uid, err := db.compactor.Write(db.dir, head, mint, maxt, nil)
 		if err != nil {
 			return errors.Wrap(err, "persist head block")
@@ -487,6 +489,7 @@ func (db *DB) compact() (err error) {
 
 		runtime.GC()
 
+		// 持久化之后立刻进行reload
 		if err := db.reload(); err != nil {
 			if err := os.RemoveAll(filepath.Join(db.dir, uid.String())); err != nil {
 				return errors.Wrapf(err, "delete persisted head block after failed db reload:%s", uid)
@@ -495,8 +498,10 @@ func (db *DB) compact() (err error) {
 		}
 		if (uid == ulid.ULID{}) {
 			// Compaction resulted in an empty block.
+			// Compaction造成了一个空的block
 			// Head truncating during db.reload() depends on the persisted blocks and
 			// in this case no new block will be persisted so manually truncate the head.
+			// db.reload()依赖于persisted blocks并且在这种情况下没有新的block被持久化，因此手动截取head
 			if err = db.head.Truncate(maxt); err != nil {
 				return errors.Wrap(err, "head truncate failed (in compact)")
 			}
@@ -505,6 +510,7 @@ func (db *DB) compact() (err error) {
 	}
 
 	// Check for compactions of multiple blocks.
+	// 检查多个blocks的压缩
 	for {
 		plan, err := db.compactor.Plan(db.dir)
 		if err != nil {
@@ -1011,6 +1017,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 
 // Querier returns a new querier over the data partition for the given time range.
 // A goroutine must not handle more than one open Querier.
+// Querier返回一个给定时间段的数据的querier，一个goroutine不能处理超过一个打开的Querier
 func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	var blocks []BlockReader
 	var blockMetas []BlockMeta
@@ -1024,6 +1031,7 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 			blockMetas = append(blockMetas, b.Meta())
 		}
 	}
+	// 如果maxt大于head的MinTime，则也包含进来
 	if maxt >= db.head.MinTime() {
 		blocks = append(blocks, &rangeHead{
 			head: db.head,
@@ -1034,12 +1042,14 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 
 	blockQueriers := make([]Querier, 0, len(blocks))
 	for _, b := range blocks {
+		// 针对每个Block构建Querier
 		q, err := NewBlockQuerier(b, mint, maxt)
 		if err == nil {
 			blockQueriers = append(blockQueriers, q)
 			continue
 		}
 		// If we fail, all previously opened queriers must be closed.
+		// 如果失败了，则必须关闭之前打开的queriers
 		for _, q := range blockQueriers {
 			q.Close()
 		}

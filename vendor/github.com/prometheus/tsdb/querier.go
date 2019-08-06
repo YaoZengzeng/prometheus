@@ -29,11 +29,14 @@ import (
 
 // Querier provides querying access over time series data of a fixed
 // time range.
+// Querier提供对于固定时间范围的时序数据的查询访问
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
+	// Select返回给定的label matchers的一系列series
 	Select(...labels.Matcher) (SeriesSet, error)
 
 	// LabelValues returns all potential values for a label name.
+	// LabelValues返回一个label name所有可能的values
 	LabelValues(string) ([]string, error)
 
 	// LabelValuesFor returns all potential values for a label name.
@@ -41,6 +44,7 @@ type Querier interface {
 	LabelValuesFor(string, labels.Label) ([]string, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
+	// LabelNames有序返回block中所有的label names
 	LabelNames() ([]string, error)
 
 	// Close releases the resources of the Querier.
@@ -48,17 +52,22 @@ type Querier interface {
 }
 
 // Series exposes a single time series.
+// Series暴露单个的时间序列
 type Series interface {
 	// Labels returns the complete set of labels identifying the series.
+	// Labels返回用于标识series的完整的labels
 	Labels() labels.Labels
 
 	// Iterator returns a new iterator of the data of the series.
+	// Iterator返回series数据的迭代器
 	Iterator() SeriesIterator
 }
 
 // querier aggregates querying results from time blocks within
 // a single partition.
+// querier聚合在一个分区里的time blocks的querying results
 type querier struct {
+	// 对多个block的Querier进行了聚合
 	blocks []Querier
 }
 
@@ -132,6 +141,7 @@ func (q *querier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 二分法，将结果聚合
 	return newMergedSeriesSet(a, b), nil
 }
 
@@ -146,6 +156,7 @@ func (q *querier) Close() error {
 
 // verticalQuerier aggregates querying results from time blocks within
 // a single partition. The block time ranges can be overlapping.
+// verticalQuerier聚合一个分区的queryring results，block的time ranges可以重合
 type verticalQuerier struct {
 	querier
 }
@@ -201,6 +212,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
 }
 
 // blockQuerier provides querying access to a single block database.
+// blockQuerier提供对于单个block database的查询访问
 type blockQuerier struct {
 	index      IndexReader
 	chunks     ChunkReader
@@ -218,6 +230,7 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
 	}
 	return &blockSeriesSet{
 		set: &populatedChunkSeries{
+			// set返回到是SeriesSet
 			set:    base,
 			chunks: q.chunks,
 			mint:   q.mint,
@@ -283,6 +296,7 @@ func init() {
 
 func findSetMatches(pattern string) []string {
 	// Return empty matches if the wrapper from Prometheus is missing.
+	// 如果缺失来自Prometheus的wrapper，则返回空的matches
 	if len(pattern) < 6 || pattern[:4] != "^(?:" || pattern[len(pattern)-2:] != ")$" {
 		return nil
 	}
@@ -325,20 +339,25 @@ func findSetMatches(pattern string) []string {
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers.
+// PostingsForMatchers组装一个indexer reader的postings iterator，基于给定的matchers
 func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	labelMustBeSet := make(map[string]bool, len(ms))
 	for _, m := range ms {
 		if !m.Matches("") {
+			// 不能为空的labels
 			labelMustBeSet[m.Name()] = true
 		}
 	}
 
+	// 遍历各个label matcher
 	for _, m := range ms {
 		matchesEmpty := m.Matches("")
+		// 如果labelMustBeSet为true，则matchesEmpty必定为false
 		if labelMustBeSet[m.Name()] || !matchesEmpty {
 			// If this matcher must be non-empty, we can be smarter.
+			// 如果matcher不能为empty，我们可以更聪明一点
 			nm, isNot := m.(*labels.NotMatcher)
 			if isNot && matchesEmpty { // l!="foo"
 				// If the label can't be empty and is a Not and the inner matcher
@@ -358,6 +377,7 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 				its = append(its, it)
 			} else { // l="a"
 				// Non-Not matcher, use normal postingsForMatcher.
+				// 不是Not matcher，则使用正常的postingsForMatcher
 				it, err := postingsForMatcher(ix, m)
 				if err != nil {
 					return nil, err
@@ -367,6 +387,7 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 		} else { // l=""
 			// If the matchers for a labelname selects an empty value, it selects all
 			// the series which don't have the label name set too. See:
+			// 如果对于一个labelname的matchers能够选择empty value，那么它也可以选择没有这个label name的series
 			// https://github.com/prometheus/prometheus/issues/3575 and
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
 			it, err := inversePostingsForMatcher(ix, m)
@@ -378,6 +399,7 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 	}
 
 	// If there's nothing to subtract from, add in everything and remove the notIts later.
+	// 如果没有东西需要减去，把所有都加上，再移除notIts
 	if len(its) == 0 && len(notIts) != 0 {
 		allPostings, err := ix.Postings(index.AllPostingsKey())
 		if err != nil {
@@ -389,6 +411,7 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 	it := index.Intersect(its...)
 
 	for _, n := range notIts {
+		// 移除notIts
 		it = index.Without(it, n)
 	}
 
@@ -399,11 +422,14 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
+	// 对于equal的匹配
 	if em, ok := m.(*labels.EqualMatcher); ok {
+		// 从IndexReader中获取指定label name和value的index.Postings
 		return ix.Postings(em.Name(), em.Value())
 	}
 
 	// Fast-path for set matching.
+	// 对于正则的快速匹配
 	if em, ok := m.(*labels.RegexpMatcher); ok {
 		setMatches := findSetMatches(em.Value())
 		if len(setMatches) > 0 {
@@ -411,6 +437,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 		}
 	}
 
+	// 找到name对应的values
 	tpls, err := ix.LabelValues(m.Name())
 	if err != nil {
 		return nil, err
@@ -422,6 +449,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 		if err != nil {
 			return nil, err
 		}
+		// 找到匹配正则表达式的value
 		if m.Matches(vals[0]) {
 			res = append(res, vals[0])
 		}
@@ -434,6 +462,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 	var rit []index.Postings
 
 	for _, v := range res {
+		// 找到匹配的value以及name的Postings
 		it, err := ix.Postings(m.Name(), v)
 		if err != nil {
 			return nil, err
@@ -441,6 +470,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 		rit = append(rit, it)
 	}
 
+	// 将Postings进行聚合
 	return index.Merge(rit...), nil
 }
 
@@ -485,6 +515,7 @@ func postingsForSetMatcher(ix IndexReader, name string, matches []string) (index
 			return nil, err
 		}
 	}
+	// 将Postings进行聚合
 	return index.Merge(its...), nil
 }
 
@@ -533,6 +564,8 @@ func EmptySeriesSet() SeriesSet {
 // mergedSeriesSet takes two series sets as a single series set. The input series sets
 // must be sorted and sequential in time, i.e. if they have the same label set,
 // the datapoints of a must be before the datapoints of b.
+// mergedSeriesSet将两个series sets合并为一个series set，输入的series sets必须排好序并且以时间为顺序
+// 如果它们有着相同的label set，a的数据点必须在b之前
 type mergedSeriesSet struct {
 	a, b SeriesSet
 
@@ -551,6 +584,7 @@ func newMergedSeriesSet(a, b SeriesSet) *mergedSeriesSet {
 	s := &mergedSeriesSet{a: a, b: b}
 	// Initialize first elements of both sets as Next() needs
 	// one element look-ahead.
+	// 初始化两个sets的第一个elements，因为Next()需要提前一个element
 	s.adone = !s.a.Next()
 	s.bdone = !s.b.Next()
 
@@ -668,14 +702,17 @@ func (s *mergedVerticalSeriesSet) Next() bool {
 
 // ChunkSeriesSet exposes the chunks and intervals of a series instead of the
 // actual series itself.
+// ChunkSeriesSet暴露chunks以及series的intervals而不是series本身
 type ChunkSeriesSet interface {
 	Next() bool
+	// 返回当前遍历到的Series的Labels，Series相应的Meta以及Interval
 	At() (labels.Labels, []chunks.Meta, Intervals)
 	Err() error
 }
 
 // baseChunkSeries loads the label set and chunk references for a postings
 // list from an index. It filters out series that have labels set that should be unset.
+// baseChunkSeries加载label set和chunk references对于一个index的postings list
 type baseChunkSeries struct {
 	p          index.Postings
 	index      IndexReader
@@ -689,6 +726,7 @@ type baseChunkSeries struct {
 
 // LookupChunkSeries retrieves all series for the given matchers and returns a ChunkSeriesSet
 // over them. It drops chunks based on tombstones in the given reader.
+// LookupChunkSeries对于给定的matchers获取所有的series并且返回一个ChunkSeriesSet，它基于给定reader的tombstones丢弃chunks
 func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher) (ChunkSeriesSet, error) {
 	if tr == nil {
 		tr = newMemTombstones()
@@ -718,9 +756,11 @@ func (s *baseChunkSeries) Next() bool {
 	)
 
 	for s.p.Next() {
+		// index.Postings返回匹配的series的Ref
 		ref := s.p.At()
 		if err := s.index.Series(ref, &lset, &chkMetas); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
+			// Postings可能太过陈旧，如果底层没有series存在的话就跳过
 			if errors.Cause(err) == ErrNotFound {
 				continue
 			}
@@ -738,6 +778,7 @@ func (s *baseChunkSeries) Next() bool {
 
 		if len(s.intervals) > 0 {
 			// Only those chunks that are not entirely deleted.
+			// 只包含那些没有被完全删除的chunks
 			chks := make([]chunks.Meta, 0, len(s.chks))
 			for _, chk := range s.chks {
 				if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
@@ -759,6 +800,7 @@ func (s *baseChunkSeries) Next() bool {
 // populatedChunkSeries loads chunk data from a store for a set of series
 // with known chunk references. It filters out chunks that do not fit the
 // given time range.
+// populatedChunkSeries为一系列已经知道chunk references的series从store中加载chunk data
 type populatedChunkSeries struct {
 	set        ChunkSeriesSet
 	chunks     ChunkReader
@@ -827,16 +869,20 @@ func (s *populatedChunkSeries) Next() bool {
 }
 
 // blockSeriesSet is a set of series from an inverted index query.
+// blockSeriesSet是从一个反向索引查询得来的一系列series
 type blockSeriesSet struct {
 	set ChunkSeriesSet
 	err error
+	// 当前的Series
 	cur Series
 
 	mint, maxt int64
 }
 
 func (s *blockSeriesSet) Next() bool {
+	// 遍历ChunkSeriesSet
 	for s.set.Next() {
+		// 从ChunkSeriesSet中获取lset，chunks
 		lset, chunks, dranges := s.set.At()
 		s.cur = &chunkSeries{
 			labels: lset,
@@ -859,8 +905,10 @@ func (s *blockSeriesSet) Err() error { return s.err }
 
 // chunkSeries is a series that is backed by a sequence of chunks holding
 // time series data.
+// chunkSeries是一个series并且包含一系列的chunks，包含time series data
 type chunkSeries struct {
 	labels labels.Labels
+	// 按序的chunk refs
 	chunks []chunks.Meta // in-order chunk refs
 
 	mint, maxt int64
@@ -881,6 +929,7 @@ type SeriesIterator interface {
 	// Seek advances the iterator forward to the given timestamp.
 	// If there's no value exactly at t, it advances to the first value
 	// after t.
+	// Seek移动iterator到给定的timestamp，如果在t没有value，则移动到第一个t之后到value
 	Seek(t int64) bool
 	// At returns the current timestamp/value pair.
 	At() (t int64, v float64)

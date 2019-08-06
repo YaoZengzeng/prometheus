@@ -59,6 +59,7 @@ type Queryable interface {
 // Querier提供了对于时序数据的读访问
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
+	// Select返回一系列匹配给定的label matchers的series
 	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
 
 	// LabelValues returns all potential values for a label name.
@@ -73,10 +74,12 @@ type Querier interface {
 }
 
 // SelectParams specifies parameters passed to data selections.
+// SelectParams指定了用于数据选择的参数
 type SelectParams struct {
 	Start int64 // Start time in milliseconds for this select.
 	End   int64 // End time in milliseconds for this select.
 
+	// 以毫秒计数的查询步长
 	Step int64  // Query step size in milliseconds.
 	Func string // String representation of surrounding function or aggregation.
 }
@@ -105,6 +108,7 @@ type Appender interface {
 }
 
 // SeriesSet contains a set of series.
+// SeriesSet包含一系列的series
 type SeriesSet interface {
 	Next() bool
 	At() Series
@@ -112,18 +116,23 @@ type SeriesSet interface {
 }
 
 // Series represents a single time series.
+// Series代表单个的时间序列
 type Series interface {
 	// Labels returns the complete set of labels identifying the series.
+	// Labels返回用于标识series的完整的labels集合
 	Labels() labels.Labels
 
 	// Iterator returns a new iterator of the data of the series.
+	// Iterator返回一个时序数据的新的iterator
 	Iterator() SeriesIterator
 }
 
 // SeriesIterator iterates over the data of a time series.
+// SeriesIterator遍历一个时序的数据
 type SeriesIterator interface {
 	// Seek advances the iterator forward to the value at or after
 	// the given timestamp.
+	// Seek将iterator移动到给定时间戳或者给定时间戳以后
 	Seek(t int64) bool
 	// At returns the current timestamp/value pair.
 	At() (t int64, v float64)

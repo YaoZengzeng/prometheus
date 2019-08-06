@@ -104,6 +104,7 @@ func (r *LiveReader) Err() error {
 }
 
 // Offset returns the number of bytes consumed from this segment.
+// Offset返回的是这个segment消耗掉字节数
 func (r *LiveReader) Offset() int64 {
 	return r.total
 }

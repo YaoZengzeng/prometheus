@@ -190,6 +190,7 @@ type memTombstones struct {
 
 // newMemTombstones creates new in memory TombstoneReader
 // that allows adding new intervals.
+// newMemTombstones创建一个新的内存中的TomstoneReader，它允许增加新的intervals
 func newMemTombstones() *memTombstones {
 	return &memTombstones{intvlGroups: make(map[uint64]Intervals)}
 }
@@ -255,6 +256,7 @@ func (tr Interval) isSubrange(dranges Intervals) bool {
 }
 
 // Intervals represents	a set of increasing and non-overlapping time-intervals.
+// Intervals代表一系列增长的并且没有重合的time-intervals
 type Intervals []Interval
 
 // add the new time-range to the existing ones.

@@ -234,6 +234,7 @@ func NewManager(o *Options, logger log.Logger) *Manager {
 		queue:  make([]*Alert, 0, o.QueueCapacity),
 		ctx:    ctx,
 		cancel: cancel,
+		// more的大小为1
 		more:   make(chan struct{}, 1),
 		opts:   o,
 		logger: logger,
@@ -298,6 +299,7 @@ func (n *Manager) nextBatch() []*Alert {
 
 	var alerts []*Alert
 
+	// 一次最多发送maxBatchSize，也就是64个alert
 	if len(n.queue) > maxBatchSize {
 		alerts = append(make([]*Alert, 0, maxBatchSize), n.queue[:maxBatchSize]...)
 		n.queue = n.queue[maxBatchSize:]
@@ -326,6 +328,7 @@ func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 			n.metrics.dropped.Add(float64(len(alerts)))
 		}
 		// If the queue still has items left, kick off the next iteration.
+		// 如果队列中还有items剩下，则启动下一次迭代
 		if n.queueLen() > 0 {
 			n.setMore()
 		}
@@ -348,11 +351,13 @@ func (n *Manager) reload(tgs map[string][]*targetgroup.Group) {
 
 // Send queues the given notification requests for processing.
 // Panics if called on a handler that is not running.
+// Send将给定的notification requests入队用于处理，如果被调用的handler不在运行，则panic
 func (n *Manager) Send(alerts ...*Alert) {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
 
 	// Attach external labels before relabelling and sending.
+	// 在relabelling以及发送之前，加入external labels
 	for _, a := range alerts {
 		lb := labels.NewBuilder(a.Labels)
 
@@ -372,6 +377,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 
 	// Queue capacity should be significantly larger than a single alert
 	// batch could be.
+	// 队列的大小应该大于单个的alert batch
 	if d := len(alerts) - n.opts.QueueCapacity; d > 0 {
 		alerts = alerts[d:]
 
@@ -381,6 +387,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 
 	// If the queue is full, remove the oldest alerts in favor
 	// of newer ones.
+	// 如果队列已经满了，移除老的alerts，用新的alerts替代
 	if d := (len(n.queue) + len(alerts)) - n.opts.QueueCapacity; d > 0 {
 		n.queue = n.queue[d:]
 
@@ -390,6 +397,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 	n.queue = append(n.queue, alerts...)
 
 	// Notify sending goroutine that there are alerts to be processed.
+	// 通知发送的goroutine，有alerts等待被处理
 	n.setMore()
 }
 
@@ -407,9 +415,11 @@ func (n *Manager) relabelAlerts(alerts []*Alert) []*Alert {
 }
 
 // setMore signals that the alert queue has items.
+// setMore通知alert queue有新的items
 func (n *Manager) setMore() {
 	// If we cannot send on the channel, it means the signal already exists
 	// and has not been consumed yet.
+	// 如果我们不能发送给channel，则意味着有老的信号还存在，还没有被消费
 	select {
 	case n.more <- struct{}{}:
 	default:
@@ -456,6 +466,7 @@ func (n *Manager) DroppedAlertmanagers() []*url.URL {
 
 // sendAll sends the alerts to all configured Alertmanagers concurrently.
 // It returns true if the alerts could be sent successfully to at least one Alertmanager.
+// sendAll并行地发送alerts到所有配置好的Alertmanagers，如果alerts被成功地发送给至少一个Alertmanager，则返回true
 func (n *Manager) sendAll(alerts ...*Alert) bool {
 	begin := time.Now()
 

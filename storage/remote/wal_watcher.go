@@ -511,6 +511,7 @@ func (w *WALWatcher) readCheckpoint(checkpointDir string) error {
 		return errors.Wrap(err, "Unable to get segments checkpoint dir")
 	}
 	for _, seg := range segs {
+		// size是通过os.Stat获取的大小
 		size, err := getSegmentSize(checkpointDir, seg)
 		if err != nil {
 			return errors.Wrap(err, "getSegmentSize")

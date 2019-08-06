@@ -45,6 +45,7 @@ const (
 )
 
 // Meta holds information about a chunk of data.
+// Meta包含了一个chunk的数据的信息
 type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
@@ -92,6 +93,7 @@ func newCRC32() hash.Hash32 {
 
 // Writer implements the ChunkWriter interface for the standard
 // serialization format.
+// Writer实现了ChunkWriter接口用于标准的序列化格式
 type Writer struct {
 	dirFile *os.File
 	files   []*os.File
@@ -107,6 +109,7 @@ const (
 )
 
 // NewWriter returns a new writer against the given directory.
+// NewWriter返回一个给定目录的writer
 func NewWriter(dir string) (*Writer, error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
@@ -119,6 +122,7 @@ func NewWriter(dir string) (*Writer, error) {
 		dirFile:     dirFile,
 		n:           0,
 		crc32:       newCRC32(),
+		// 默认的chunk segment size为512M
 		segmentSize: defaultChunkSegmentSize,
 	}
 	return cw, nil
@@ -133,12 +137,15 @@ func (w *Writer) tail() *os.File {
 
 // finalizeTail writes all pending data to the current tail file,
 // truncates its size, and closes it.
+// finalizeTail将所有pending的数据写入当前的的tail file
+// 截取它的size并且关闭它
 func (w *Writer) finalizeTail() error {
 	tf := w.tail()
 	if tf == nil {
 		return nil
 	}
 
+	// 将缓存中的数据写入文件
 	if err := w.wbuf.Flush(); err != nil {
 		return err
 	}
@@ -146,6 +153,7 @@ func (w *Writer) finalizeTail() error {
 		return err
 	}
 	// As the file was pre-allocated, we truncate any superfluous zero bytes.
+	// 截取多余的零字节
 	off, err := tf.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return err
@@ -154,11 +162,13 @@ func (w *Writer) finalizeTail() error {
 		return err
 	}
 
+	// 关闭文件
 	return tf.Close()
 }
 
 func (w *Writer) cut() error {
 	// Sync current tail to disk and close.
+	// 同步当前的tail到磁盘并且关闭
 	if err := w.finalizeTail(); err != nil {
 		return err
 	}
@@ -179,6 +189,7 @@ func (w *Writer) cut() error {
 	}
 
 	// Write header metadata for new file.
+	// 在新的文件的头部写入元数据
 	metab := make([]byte, 8)
 	binary.BigEndian.PutUint32(metab[:MagicChunksSize], MagicChunks)
 	metab[4] = chunksFormatV1
@@ -191,8 +202,10 @@ func (w *Writer) cut() error {
 	if w.wbuf != nil {
 		w.wbuf.Reset(f)
 	} else {
+		// 缓存大小为8M
 		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
 	}
+	// 重新将n设置为8
 	w.n = 8
 
 	return nil
@@ -200,6 +213,7 @@ func (w *Writer) cut() error {
 
 func (w *Writer) write(b []byte) error {
 	n, err := w.wbuf.Write(b)
+	// n为累积的字节数
 	w.n += int64(n)
 	return err
 }
@@ -286,6 +300,7 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 func (w *Writer) WriteChunks(chks ...Meta) error {
 	// Calculate maximum space we need and cut a new segment in case
 	// we don't fit into the current one.
+	// 计算我们需要的最大内存并且创建一个新的segment，如果当前的大小并不合适的话
 	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
 	for _, c := range chks {
 		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
@@ -295,6 +310,8 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	newsz := w.n + maxLen
 
 	if w.wbuf == nil || w.n > w.segmentSize || newsz > w.segmentSize && maxLen <= w.segmentSize {
+		// w.n > w.segmentSize这种情况是不可能发生的
+		// 只有新加maxLen大于segmentSize才创建新的segment
 		if err := w.cut(); err != nil {
 			return err
 		}
@@ -302,11 +319,15 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 	var (
 		b   = [binary.MaxVarintLen32]byte{}
+		// seq是当前写入的文件编号
 		seq = uint64(w.seq()) << 32
 	)
+	// 写入chunks
 	for i := range chks {
 		chk := &chks[i]
 
+		// 将ref合并为seq和w.n
+		// 从chk.Ref能找到chunk在哪个文件中，以及在文件中的位置
 		chk.Ref = seq | uint64(w.n)
 
 		n := binary.PutUvarint(b[:], uint64(len(chk.Chunk.Bytes())))
@@ -315,9 +336,11 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 			return err
 		}
 		b[0] = byte(chk.Chunk.Encoding())
+		// 先写入chunk的编码类型
 		if err := w.write(b[:1]); err != nil {
 			return err
 		}
+		// 再写入chunk的内容
 		if err := w.write(chk.Chunk.Bytes()); err != nil {
 			return err
 		}
@@ -326,6 +349,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		if err := chk.writeHash(w.crc32); err != nil {
 			return err
 		}
+		// 再写入哈希
 		if err := w.write(w.crc32.Sum(b[:0])); err != nil {
 			return err
 		}
@@ -492,6 +516,7 @@ func nextSequenceFile(dir string) (string, int, error) {
 		}
 		i = j
 	}
+	// 下一个序列号
 	return filepath.Join(dir, fmt.Sprintf("%0.6d", i+1)), int(i + 1), nil
 }
 

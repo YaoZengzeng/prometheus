@@ -41,6 +41,8 @@ const (
 
 // RecordDecoder decodes series, sample, and tombstone records.
 // The zero value is ready to use.
+// RecordDecoder解码series，sample以及tombstone records
+// 零值就可以直接使用
 type RecordDecoder struct {
 }
 
@@ -58,6 +60,7 @@ func (d *RecordDecoder) Type(rec []byte) RecordType {
 }
 
 // Series appends series in rec to the given slice.
+// Series将rec中的series扩展到给定的slice
 func (d *RecordDecoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 	dec := encoding.Decbuf{B: rec}
 
@@ -65,16 +68,20 @@ func (d *RecordDecoder) Series(rec []byte, series []RefSeries) ([]RefSeries, err
 		return nil, errors.New("invalid record type")
 	}
 	for len(dec.B) > 0 && dec.Err() == nil {
+		// 获取前八个字节的内容
 		ref := dec.Be64()
 
+		// 这里需要申请内存
 		lset := make(labels.Labels, dec.Uvarint())
 
 		for i := range lset {
 			lset[i].Name = dec.UvarintStr()
 			lset[i].Value = dec.UvarintStr()
 		}
+		// 对lset进行排序
 		sort.Sort(lset)
 
+		// 创建RefSeries
 		series = append(series, RefSeries{
 			Ref:    ref,
 			Labels: lset,
@@ -84,6 +91,7 @@ func (d *RecordDecoder) Series(rec []byte, series []RefSeries) ([]RefSeries, err
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
+		// 不能有字节剩余
 		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return series, nil
@@ -150,6 +158,7 @@ func (d *RecordDecoder) Tombstones(rec []byte, tstones []Stone) ([]Stone, error)
 
 // RecordEncoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
+// RecordEncoder对series，sample以及tombstones records进行编码，零值就可以使用
 type RecordEncoder struct {
 }
 

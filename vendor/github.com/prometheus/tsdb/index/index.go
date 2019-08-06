@@ -110,6 +110,7 @@ func newCRC32() hash.Hash32 {
 
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
+// Writer实现了IndexWriter接口用于标准的序列化格式
 type Writer struct {
 	f    *os.File
 	fbuf *bufio.Writer
@@ -199,16 +200,19 @@ func NewWriter(fn string) (*Writer, error) {
 
 	iw := &Writer{
 		f:     f,
+		// 构建writer buff
 		fbuf:  bufio.NewWriterSize(f, 1<<22),
 		pos:   0,
 		stage: idxStageNone,
 
 		// Reusable memory.
+		// 可重用的内存
 		buf1:    encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2:    encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		uint32s: make([]uint32, 0, 1<<15),
 
 		// Caches.
+		// 缓存
 		symbols:       make(map[string]uint32, 1<<13),
 		seriesOffsets: make(map[uint64]uint64, 1<<16),
 		crc32:         newCRC32(),
@@ -221,6 +225,7 @@ func NewWriter(fn string) (*Writer, error) {
 
 func (w *Writer) write(bufs ...[]byte) error {
 	for _, b := range bufs {
+		// 将buf写入缓存
 		n, err := w.fbuf.Write(b)
 		w.pos += uint64(n)
 		if err != nil {
@@ -230,6 +235,7 @@ func (w *Writer) write(bufs ...[]byte) error {
 		// offset references in v1 are only 4 bytes large.
 		// Once we move to compressed/varint representations in those areas, this limitation
 		// can be lifted.
+		// 现在index的大小不能超过64GiB
 		if w.pos > 16*math.MaxUint32 {
 			return errors.Errorf("exceeding max size of 64GiB")
 		}
@@ -249,6 +255,7 @@ func (w *Writer) addPadding(size int) error {
 
 // ensureStage handles transitions between write stages and ensures that IndexWriter
 // methods are called in an order valid for the implementation.
+// ensureStage处理write stages的转换并且确保IndexWriter的方法以合法的顺序运行
 func (w *Writer) ensureStage(s indexWriterStage) error {
 	if w.stage == s {
 		return nil
@@ -328,6 +335,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Name)
 		}
+		// 在buf2中写入对应series的所有label的key和value的索引
 		w.buf2.PutUvarint32(index)
 
 		index, ok = w.symbols[l.Value]
@@ -337,10 +345,12 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		w.buf2.PutUvarint32(index)
 	}
 
+	// 每个section都以长度开头
 	w.buf2.PutUvarint(len(chunks))
 
 	if len(chunks) > 0 {
 		c := chunks[0]
+		// 写入chunk的最小时间，跨越的时间段以及c.Ref，Ref中包含了chunk所在文件的位置以及在文件中的位置
 		w.buf2.PutVarint64(c.MinTime)
 		w.buf2.PutUvarint64(uint64(c.MaxTime - c.MinTime))
 		w.buf2.PutUvarint64(c.Ref)
@@ -358,6 +368,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	}
 
 	w.buf1.Reset()
+	// 写入buf2的大小
 	w.buf1.PutUvarint(w.buf2.Len())
 
 	w.buf2.PutHash(w.crc32)
@@ -376,11 +387,13 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 		return err
 	}
 	// Generate sorted list of strings we will store as reference table.
+	// 产生排好序的strigns，我们会将它存储作为reference table
 	symbols := make([]string, 0, len(sym))
 
 	for s := range sym {
 		symbols = append(symbols, s)
 	}
+	// 对所有的symbols进行排序
 	sort.Strings(symbols)
 
 	w.buf1.Reset()
@@ -391,10 +404,13 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 	w.symbols = make(map[string]uint32, len(symbols))
 
 	for index, s := range symbols {
+		// 构建symbol和坐标的关系
 		w.symbols[s] = uint32(index)
+		// 将symbol写入buf2
 		w.buf2.PutUvarintStr(s)
 	}
 
+	// buf1写入buf2的长度
 	w.buf1.PutBE32int(w.buf2.Len())
 	w.buf2.PutHash(w.crc32)
 
@@ -552,6 +568,7 @@ func (w *Writer) Close() error {
 	if err := w.ensureStage(idxStageDone); err != nil {
 		return err
 	}
+	// 将数据flush到底层的io.Writer
 	if err := w.fbuf.Flush(); err != nil {
 		return err
 	}
@@ -578,6 +595,7 @@ type Reader struct {
 	// Cached hashmaps of section offsets.
 	labels map[string]uint64
 	// LabelName to LabelValue to offset map.
+	// LabelName到LabelValue到offset的映射
 	postings map[string]map[string]uint64
 	// Cache of read symbols. Strings that are returned when reading from the
 	// block are always backed by true strings held in here rather than
@@ -820,6 +838,7 @@ func (r *Reader) lookupSymbol(o uint32) (string, error) {
 }
 
 // Symbols returns a set of symbols that exist within the index.
+// Symbols返回一系列存在在symbols中的index
 func (r *Reader) Symbols() (map[string]struct{}, error) {
 	res := make(map[string]struct{}, len(r.symbolsV1)+len(r.symbolsV2))
 
@@ -896,6 +915,7 @@ func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) err
 }
 
 // Postings returns a postings list for the given label pair.
+// Postings返回给定label pair的postings list
 func (r *Reader) Postings(name, value string) (Postings, error) {
 	e, ok := r.postings[name]
 	if !ok {

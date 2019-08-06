@@ -476,6 +476,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	start := time.Now()
 
 	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// 创建一个新的uid
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
 	meta := &BlockMeta{
@@ -487,6 +488,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
 	if parent != nil {
+		// parent不为nil，指定parent的信息
 		meta.Compaction.Parents = []BlockDesc{
 			{ULID: parent.ULID, MinTime: parent.MinTime, MaxTime: parent.MaxTime},
 		}
@@ -498,6 +500,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	}
 
 	if meta.Stats.NumSamples == 0 {
+		// 如果没有写入samples，返回空
 		return ulid.ULID{}, nil
 	}
 
@@ -513,6 +516,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 
 // instrumentedChunkWriter is used for level 1 compactions to record statistics
 // about compacted chunks.
+// instrumentedChunkWriter是用在第一层的压缩用于记录压缩的chunks的数据
 type instrumentedChunkWriter struct {
 	ChunkWriter
 
@@ -532,6 +536,7 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 
 // write creates a new block that is the union of the provided blocks into dir.
 // It cleans up all files of the old blocks after completing successfully.
+// write创建一个新的block，它将提供的blocks合并到dir中，它在全部完成之后清除老到blocks的所有文件
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	dir := filepath.Join(dest, meta.ULID.String())
 	tmp := dir + ".tmp"
@@ -543,6 +548,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		err = merr.Err()
 
 		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
+		// 当tmp不存在的时候，RemoveAll不会返回错误，因此总是调用它都是安全的
 		if err := os.RemoveAll(tmp); err != nil {
 			level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
 		}
@@ -560,6 +566,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 
 	// Populate chunk and index files into temporary directory with
 	// data of all blocks.
+	// 将所有block的数据写入tmp文件夹的chunk以及index file中
 	var chunkw ChunkWriter
 
 	chunkw, err = chunks.NewWriter(chunkDir(tmp))
@@ -577,12 +584,14 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 	}
 
+	// 构建index writer
 	indexw, err := index.NewWriter(filepath.Join(tmp, indexFilename))
 	if err != nil {
 		return errors.Wrap(err, "open index writer")
 	}
 	closers = append(closers, indexw)
 
+	// 填充block
 	if err := c.populateBlock(blocks, meta, indexw, chunkw); err != nil {
 		return errors.Wrap(err, "write compaction")
 	}
@@ -607,10 +616,12 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	// Populated block is empty, so exit early.
+	// 如果填充的block为空，则直接早点返回
 	if meta.Stats.NumSamples == 0 {
 		return nil
 	}
 
+	// 写入元数据
 	if _, err = writeMetaFile(c.logger, tmp, meta); err != nil {
 		return errors.Wrap(err, "write merged meta")
 	}
@@ -641,6 +652,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	df = nil
 
 	// Block successfully written, make visible and remove old ones.
+	// Block被成功写入，让它visible并且移除老的block
 	if err := fileutil.Replace(tmp, dir); err != nil {
 		return errors.Wrap(err, "rename block dir")
 	}
@@ -651,6 +663,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 // populateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
+// populateBlock用provided blocks提供的数据填充index以及chunk writers，它返回新的block的元数据，它期望提供的blocks按照mint进行排序
 func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, indexw IndexWriter, chunkw ChunkWriter) (err error) {
 	if len(blocks) == 0 {
 		return errors.New("cannot populate block from no readers")
@@ -672,6 +685,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	c.metrics.populatingBlocks.Set(1)
 
 	globalMaxt := blocks[0].MaxTime()
+	// 合并多个block的series，indexer和tombstone
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
@@ -683,6 +697,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			if i > 0 && b.MinTime() < globalMaxt {
 				c.metrics.overlappingBlocks.Inc()
 				overlapping = true
+				// 在压缩的时候发现了有重合的blocks
 				level.Warn(c.logger).Log("msg", "found overlapping blocks during compaction", "ulid", meta.ULID)
 			}
 			if b.MaxTime() > globalMaxt {
@@ -690,6 +705,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 		}
 
+		// 构建各种index, chunk以及tombstone reader
 		indexr, err := b.Index()
 		if err != nil {
 			return errors.Wrapf(err, "open index reader for block %s", b)
@@ -716,15 +732,18 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			allSymbols[s] = struct{}{}
 		}
 
+		// 获取到所有的id
 		all, err := indexr.Postings(index.AllPostingsKey())
 		if err != nil {
 			return err
 		}
 		all = indexr.SortedPostings(all)
 
+		// 新的压缩的series set
 		s := newCompactionSeriesSet(indexr, chunkr, tombsr, all)
 
 		if i == 0 {
+			// 如果i为0，则直接赋值为set，直接返回
 			set = s
 			continue
 		}
@@ -735,16 +754,19 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	// We fully rebuild the postings list index from merged series.
+	// 从merged series重新构建posting list index
 	var (
 		postings = index.NewMemPostings()
 		values   = map[string]stringset{}
 		i        = uint64(0)
 	)
 
+	// 首先写入所有的symbols
 	if err := indexw.AddSymbols(allSymbols); err != nil {
 		return errors.Wrap(err, "add symbols")
 	}
 
+	// 找到下一个id的chunks等等
 	for set.Next() {
 		select {
 		case <-c.ctx.Done():
@@ -761,6 +783,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 
 		// Skip the series with all deleted chunks.
+		// 如果所有的chunks都删除了，则跳过
 		if len(chks) == 0 {
 			continue
 		}
@@ -823,15 +846,18 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 				return errors.Wrap(err, "merge overlapping chunks")
 			}
 		}
+		// 真正写入chunk
 		if err := chunkw.WriteChunks(mergedChks...); err != nil {
 			return errors.Wrap(err, "write chunks")
 		}
 
+		// 在index中写入series
 		if err := indexw.AddSeries(i, lset, mergedChks...); err != nil {
 			return errors.Wrap(err, "add series")
 		}
 
 		meta.Stats.NumChunks += uint64(len(mergedChks))
+		// 一个series的所有chunk都写入了
 		meta.Stats.NumSeries++
 		for _, chk := range mergedChks {
 			meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
@@ -902,6 +928,7 @@ func newCompactionSeriesSet(i IndexReader, c ChunkReader, t TombstoneReader, p i
 
 func (c *compactionSeriesSet) Next() bool {
 	if !c.p.Next() {
+		// 所有id都遍历完毕
 		return false
 	}
 	var err error
@@ -912,12 +939,14 @@ func (c *compactionSeriesSet) Next() bool {
 		return false
 	}
 
+	// 根据id填充对应的label和chunk
 	if err = c.index.Series(c.p.At(), &c.l, &c.c); err != nil {
 		c.err = errors.Wrapf(err, "get series %d", c.p.At())
 		return false
 	}
 
 	// Remove completely deleted chunks.
+	// 移除完全删除的chunks
 	if len(c.intervals) > 0 {
 		chks := make([]chunks.Meta, 0, len(c.c))
 		for _, chk := range c.c {
@@ -930,8 +959,10 @@ func (c *compactionSeriesSet) Next() bool {
 	}
 
 	for i := range c.c {
+		// chk是chunk的元数据
 		chk := &c.c[i]
 
+		// 利用c.chunks接口以及chk.Ref找到对应的chunk
 		chk.Chunk, err = c.chunks.Chunk(chk.Ref)
 		if err != nil {
 			c.err = errors.Wrapf(err, "chunk %d not found", chk.Ref)
@@ -969,6 +1000,7 @@ func newCompactionMerger(a, b ChunkSeriesSet) (*compactionMerger, error) {
 	}
 	// Initialize first elements of both sets as Next() needs
 	// one element look-ahead.
+	// 初始化两个sets的第一个elements
 	c.aok = c.a.Next()
 	c.bok = c.b.Next()
 
@@ -1011,6 +1043,7 @@ func (c *compactionMerger) Next() bool {
 		c.aok = c.a.Next()
 	} else {
 		// Both sets contain the current series. Chain them into a single one.
+		// 两个set都包含当前的series，将它们连接成一个
 		l, ca, ra := c.a.At()
 		_, cb, rb := c.b.At()
 

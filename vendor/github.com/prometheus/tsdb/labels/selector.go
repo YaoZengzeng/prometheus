@@ -96,6 +96,7 @@ func NewMustRegexpMatcher(name, pattern string) Matcher {
 }
 
 // NotMatcher inverts the matching result for a matcher.
+// NotMatcher倒置一个matcher的匹配结果
 type NotMatcher struct {
 	Matcher
 }
@@ -104,6 +105,7 @@ func (m NotMatcher) Matches(v string) bool { return !m.Matcher.Matches(v) }
 func (m NotMatcher) String() string        { return fmt.Sprintf("not(%s)", m.Matcher.String()) }
 
 // Not inverts the matcher's matching result.
+// Not导致matcher的匹配结果
 func Not(m Matcher) Matcher {
 	return &NotMatcher{m}
 }

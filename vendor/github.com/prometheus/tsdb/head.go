@@ -53,6 +53,8 @@ var (
 
 	// emptyTombstoneReader is a no-op Tombstone Reader.
 	// This is used by head to satisfy the Tombstones() function call.
+	// emptyTombstoneReader是一个不做任何操作的Tombstone Reader
+	// 它仅仅被head使用用于满足Tombstones()的函数调用要求
 	emptyTombstoneReader = newMemTombstones()
 )
 
@@ -72,10 +74,12 @@ type Head struct {
 	lastSeriesID     uint64
 
 	// All series addressable by their ID or hash.
+	// 所有通过它们的ID或者哈希进行寻址的series
 	series *stripeSeries
 
 	symMtx  sync.RWMutex
 	symbols map[string]struct{}
+	// label names到可能的values的映射
 	values  map[string]stringset // label names to possible values
 
 	deletedMtx sync.Mutex
@@ -254,6 +258,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 // processWALSamples adds a partition of samples it receives to the head and passes
 // them on to other workers.
 // Samples before the mint timestamp are discarded.
+// processWALSamples将它收到的一部分samples加入head并且将它们传递给其他worker
 func (h *Head) processWALSamples(
 	minValidTime int64,
 	input <-chan []RefSample, output chan<- []RefSample,
@@ -279,11 +284,14 @@ func (h *Head) processWALSamples(
 				}
 				refSeries[s.Ref] = ms
 			}
+			// 将sample加入memSeries
 			_, chunkCreated := ms.append(s.T, s.V)
 			if chunkCreated {
+				// 如果创建了chunk，则更新metrics
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
+			// 更新maxt和mint
 			if s.T > maxt {
 				maxt = s.T
 			}
@@ -291,14 +299,17 @@ func (h *Head) processWALSamples(
 				mint = s.T
 			}
 		}
+		// 再将用完的samples还给output
 		output <- samples
 	}
+	// 更新mint和maxt
 	h.updateMinMaxTime(mint, maxt)
 
 	return unknownRefs
 }
 
 func (h *Head) updateMinMaxTime(mint, maxt int64) {
+	// 持续更新，直到失效或者更新成功为止
 	for {
 		lt := h.MinTime()
 		if mint >= lt {
@@ -322,11 +333,14 @@ func (h *Head) updateMinMaxTime(mint, maxt int64) {
 func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
+	// unknownRefs用于追踪我们不知道引用的series的samples的数目，用于错误报告
 	var unknownRefs uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
 	// read from the WAL are processed in order.
+	// 启动workers，每个处理来自一部分series ID空间的samples
+	// 它们通过一个ring of channels相连，这保证了从WAL中读取的sample batches都是有序的
 	var (
 		wg           sync.WaitGroup
 		multiRefLock sync.Mutex
@@ -338,6 +352,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
+		// 对于CorruptionErr，确保在退出之前终止所有的workers
 		if _, ok := err.(*wal.CorruptionErr); ok {
 			for i := 0; i < n; i++ {
 				close(inputs[i])
@@ -352,6 +367,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		outputs[i] = make(chan []RefSample, 300)
 		inputs[i] = make(chan []RefSample, 300)
 
+		// 创建worker，对RefSample进行处理
 		go func(input <-chan []RefSample, output chan<- []RefSample) {
 			unknown := h.processWALSamples(h.minValidTime, input, output)
 			atomic.AddUint64(&unknownRefs, unknown)
@@ -372,6 +388,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		}
 	}()
 	for r.Next() {
+		// 重用series, samples以及tsones
 		series, samples, tstones = series[:0], samples[:0], tstones[:0]
 		rec := r.Record()
 
@@ -386,10 +403,12 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 				}
 			}
 			for _, s := range series {
+				// 将series更新到Head中
 				series, created := h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
 
 				if !created {
 					// There's already a different ref for this series.
+					// 对于这个series已经有一个不一样的ref了
 					multiRefLock.Lock()
 					multiRef[s.Ref] = series.ref
 					multiRefLock.Unlock()
@@ -413,8 +432,11 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
 			// cause thousands of very large in flight buffers occupying large amounts
 			// of unused memory.
+			// 我们将samples划分为每个chunk小于等于5000个samples，大概总共有O(300 * #cores)个sample在处理
+			// 否则大量的scrape可能导致大量的in flight buffers，产生大量无用的内存
 			for len(samples) > 0 {
 				m := 5000
+				// 每次至多5000个samples
 				if len(samples) < m {
 					m = len(samples)
 				}
@@ -422,23 +444,30 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 				for i := 0; i < n; i++ {
 					var buf []RefSample
 					select {
+					// worker从对应的output channel获取buf
 					case buf = <-outputs[i]:
 					default:
 					}
+					// 重用buf
+					// 如果outputs来不及的话，其实还是创建新的buf
 					shards[i] = buf[:0]
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
+						// 更新ref
 						sam.Ref = r
 					}
+					// 根据ref取模，将sample划分到对应的shard
 					mod := sam.Ref % uint64(n)
 					shards[mod] = append(shards[mod], sam)
 				}
+				// 还是要等待所有的shard都进入
 				for i := 0; i < n; i++ {
 					inputs[i] <- shards[i]
 				}
 				samples = samples[m:]
 			}
+			// 保留slice用于后期使用
 			samples = s // Keep whole slice for reuse.
 		case RecordTombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
@@ -472,6 +501,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 
 	// Signal termination to each worker and wait for it to close its output channel.
 	for i := 0; i < n; i++ {
+		// 关闭各个worker的input并且榨干相应的output
 		close(inputs[i])
 		for range outputs[i] {
 		}
@@ -517,6 +547,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 	multiRef := map[uint64]uint64{}
 	if err == nil {
+		// NewSegmentsReader返回目录里所有segment的reader
 		sr, err := wal.NewSegmentsReader(dir)
 		if err != nil {
 			return errors.Wrap(err, "open checkpoint")
@@ -529,6 +560,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
+		// 如果checkpoint被损坏了，现在是很难恢复的，需要用户介入，尽管很少有数据能够被恢复
 		if err := h.loadWAL(wal.NewReader(sr), multiRef); err != nil {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
@@ -785,6 +817,7 @@ func (h *Head) appender() *headAppender {
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
 		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
+		// appender的mint和maxt都是自己定义的
 		mint:         math.MaxInt64,
 		maxt:         math.MinInt64,
 		// 从buffer中找出samples的缓存
@@ -827,6 +860,7 @@ func (h *Head) putBytesBuffer(b []byte) {
 
 type headAppender struct {
 	head         *Head
+	// 时间戳小于minValidTime是不被允许的s
 	minValidTime int64 // No samples below this timestamp are allowed.
 	mint, maxt   int64
 
@@ -844,6 +878,7 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {
+		// 如果是新建的series，则扩展a.series
 		a.series = append(a.series, RefSeries{
 			Ref:    s.ref,
 			Labels: lset,
@@ -857,6 +892,7 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		return ErrOutOfBounds
 	}
 
+	// 通过ref，即id找到相应的series
 	s := a.head.series.getByID(ref)
 	if s == nil {
 		return errors.Wrap(ErrNotFound, "unknown series")
@@ -866,20 +902,25 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 		s.Unlock()
 		return err
 	}
+	// 将series的pendingCommit设置为true
 	s.pendingCommit = true
 	s.Unlock()
 
 	if t < a.mint {
+		// 更新mint
 		a.mint = t
 	}
 	if t > a.maxt {
+		// 更新maxt
 		a.maxt = t
 	}
 
+	// AddFast仅仅将samples扩展a.samples，在commit的时候才提交到sereis的chunk中
 	a.samples = append(a.samples, RefSample{
 		Ref:    ref,
 		T:      t,
 		V:      v,
+		// sample中也包含对series的引用
 		series: s,
 	})
 	return nil
@@ -897,6 +938,7 @@ func (a *headAppender) log() error {
 	var enc RecordEncoder
 
 	if len(a.series) > 0 {
+		// 对appender中的series进行编码，写入wal中
 		rec = enc.Series(a.series, buf)
 		buf = rec[:0]
 
@@ -905,6 +947,7 @@ func (a *headAppender) log() error {
 		}
 	}
 	if len(a.samples) > 0 {
+		// 对appender中的samples进行编码，写入wal中
 		rec = enc.Samples(a.samples, buf)
 		buf = rec[:0]
 
@@ -917,14 +960,17 @@ func (a *headAppender) log() error {
 
 func (a *headAppender) Commit() error {
 	defer a.head.metrics.activeAppenders.Dec()
+	// Commit之后将samples放回append buffer中
 	defer a.head.putAppendBuffer(a.samples)
 
+	// 首先调用a.log()写入wal
 	if err := a.log(); err != nil {
 		return errors.Wrap(err, "write to WAL")
 	}
 
 	total := len(a.samples)
 
+	// 遍历所有samples，把它们加入到memSeries中
 	for _, s := range a.samples {
 		s.series.Lock()
 		// 对每个Sample都独立加锁
@@ -936,11 +982,13 @@ func (a *headAppender) Commit() error {
 			total--
 		}
 		if chunkCreated {
+			// 如果有新的chunk被创建
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 		}
 	}
 
+	// 增加samplesAppended这个metric
 	a.head.metrics.samplesAppended.Add(float64(total))
 	a.head.updateMinMaxTime(a.mint, a.maxt)
 
@@ -951,6 +999,7 @@ func (a *headAppender) Rollback() error {
 	a.head.metrics.activeAppenders.Dec()
 	for _, s := range a.samples {
 		s.series.Lock()
+		// Rollback的话直接将sample所属的series的pendingCommit设置为false
 		s.series.pendingCommit = false
 		s.series.Unlock()
 	}
@@ -958,6 +1007,7 @@ func (a *headAppender) Rollback() error {
 
 	// Series are created in the head memory regardless of rollback. Thus we have
 	// to log them to the WAL in any case.
+	// Series是在head memory中创建的，和rollback无关，因此我们要把它写入WAL中，不管在什么情况下
 	a.samples = nil
 	return a.log()
 }
@@ -1148,8 +1198,10 @@ func (h *Head) MaxTime() int64 {
 }
 
 // compactable returns whether the head has a compactable range.
+// compactable返回head是否有一个compactable range
 // The head has a compactable range when the head time range is 1.5 times the chunk range.
 // The 0.5 acts as a buffer of the appendable window.
+// 当head的time range是1.5倍的chunk range，则head有compactable range
 func (h *Head) compactable() bool {
 	return h.MaxTime()-h.MinTime() > h.chunkRange/2*3
 }
@@ -1175,9 +1227,11 @@ func (h *headChunkReader) Close() error {
 // It panicks if the seriesID exceeds 5 bytes or the chunk ID 3 bytes.
 func packChunkID(seriesID, chunkID uint64) uint64 {
 	if seriesID > (1<<40)-1 {
+		// series ID不能超过5个字节
 		panic("series ID exceeds 5 bytes")
 	}
 	if chunkID > (1<<24)-1 {
+		// chunkID不能超过3个字节
 		panic("chunk ID exceeds 3 bytes")
 	}
 	return (seriesID << 24) | chunkID
@@ -1188,6 +1242,7 @@ func unpackChunkID(id uint64) (seriesID, chunkID uint64) {
 }
 
 // Chunk returns the chunk for the reference number.
+// Chunk返回reference number对应的chunk
 func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	sid, cid := unpackChunkID(ref)
 
@@ -1202,6 +1257,7 @@ func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 
 	// This means that the chunk has been garbage collected or is outside
 	// the specified range.
+	// 如果找不到chunk，则说明它已经被GC了或者处于指定的range之外
 	if c == nil || !c.OverlapsClosedInterval(h.mint, h.maxt) {
 		s.Unlock()
 		return nil, ErrNotFound
@@ -1243,6 +1299,7 @@ func (h *headIndexReader) Symbols() (map[string]struct{}, error) {
 
 	res := make(map[string]struct{}, len(h.head.symbols))
 
+	// 返回head中存储的所有symbols，即所有label的key和value
 	for s := range h.head.symbols {
 		res[s] = struct{}{}
 	}
@@ -1250,6 +1307,7 @@ func (h *headIndexReader) Symbols() (map[string]struct{}, error) {
 }
 
 // LabelValues returns the possible label values
+// LabelValues返回所有可能的label values
 func (h *headIndexReader) LabelValues(names ...string) (index.StringTuples, error) {
 	if len(names) != 1 {
 		return nil, encoding.ErrInvalidSize
@@ -1267,6 +1325,7 @@ func (h *headIndexReader) LabelValues(names ...string) (index.StringTuples, erro
 }
 
 // LabelNames returns all the unique label names present in the head.
+// LabelNames返回head中所有唯一的label names
 func (h *headIndexReader) LabelNames() ([]string, error) {
 	h.head.symMtx.RLock()
 	defer h.head.symMtx.RUnlock()
@@ -1282,6 +1341,7 @@ func (h *headIndexReader) LabelNames() ([]string, error) {
 }
 
 // Postings returns the postings list iterator for the label pair.
+// Postings返回给定的label pair的postings list iterator
 func (h *headIndexReader) Postings(name, value string) (index.Postings, error) {
 	return h.head.postings.Get(name, value), nil
 }
@@ -1290,6 +1350,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	series := make([]*memSeries, 0, 128)
 
 	// Fetch all the series only once.
+	// 一次性找到所有的series
 	for p.Next() {
 		s := h.head.series.getByID(p.At())
 		if s == nil {
@@ -1307,6 +1368,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	})
 
 	// Convert back to list.
+	// 重新将series转换为id
 	ep := make([]uint64, 0, len(series))
 	for _, p := range series {
 		ep = append(ep, p.ref)
@@ -1315,6 +1377,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 }
 
 // Series returns the series for the given reference.
+// Series返回给定references的series
 func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(ref)
 
@@ -1322,6 +1385,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 		h.head.metrics.seriesNotFound.Inc()
 		return ErrNotFound
 	}
+	// 重用chunks和labelset
 	*lbls = append((*lbls)[:0], s.lset...)
 
 	s.Lock()
@@ -1331,6 +1395,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 
 	for i, c := range s.chunks {
 		// Do not expose chunks that are outside of the specified range.
+		// 不要暴露指定的范围之外的chunks
 		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
 			continue
 		}
@@ -1343,6 +1408,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 		*chks = append(*chks, chunks.Meta{
 			MinTime: c.minTime,
 			MaxTime: maxTime,
+			// 组合Ref ID和chunk id
 			Ref:     packChunkID(s.ref, uint64(s.chunkID(i))),
 		})
 	}
@@ -1364,41 +1430,51 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
 	// Just using `getOrSet` below would be semantically sufficient, but we'd create
 	// a new series on every sample inserted via Add(), which causes allocations
 	// and makes our series IDs rather random and harder to compress in postings.
+	// 使用`getOrSet`就足够用了，但是我们在通过Add()插入每个sample都会创建一个新的series，它会导致内存分配
+	// 并且让我们的ID更随机，在postings的时候压缩更难
 	s := h.series.getByHash(hash, lset)
 	if s != nil {
 		return s, false
 	}
 
 	// Optimistically assume that we are the first one to create the series.
+	// 乐观地假设我们是第一个创建sereis的
 	id := atomic.AddUint64(&h.lastSeriesID, 1)
 
 	return h.getOrCreateWithID(id, hash, lset)
 }
 
+// 用id获取或者创建Head里的series
 func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool) {
 	s := newMemSeries(lset, id, h.chunkRange)
 
 	s, created := h.series.getOrSet(hash, s)
 	if !created {
+		// 之前已经存在，则直接返回
 		return s, false
 	}
 
 	h.metrics.series.Inc()
 	h.metrics.seriesCreated.Inc()
 
+	// 将id和lset放入postings
 	h.postings.Add(id, lset)
 
 	h.symMtx.Lock()
 	defer h.symMtx.Unlock()
 
+	// 更新head中的values和symbols字段
 	for _, l := range lset {
+		// head中保存所有label的name到所有value的映射
 		valset, ok := h.values[l.Name]
 		if !ok {
 			valset = stringset{}
 			h.values[l.Name] = valset
 		}
+		// 载valueset中设置l.Value
 		valset.set(l.Value)
 
+		// symbols中包含了所有label的name和value
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
 	}
@@ -1410,10 +1486,13 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 // on top of a regular hashmap and holds a slice of series to resolve hash collisions.
 // Its methods require the hash to be submitted with it to avoid re-computations throughout
 // the code.
+// seriesHashmap是一个简单的hashmap，通过它们的label set找到memSeries，它构建在一个通常的hashmap之上
+// 并且维护一个series的slice来解决哈希冲突，它的方法要求提供hash来避免重复计算
 type seriesHashmap map[uint64][]*memSeries
 
 func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	for _, s := range m[hash] {
+		// 有多个labelset哈希值相等的话，直接比较
 		if s.lset.Equals(lset) {
 			return s
 		}
@@ -1424,11 +1503,13 @@ func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 func (m seriesHashmap) set(hash uint64, s *memSeries) {
 	l := m[hash]
 	for i, prev := range l {
+		// 遍历[]*memSeries
 		if prev.lset.Equals(s.lset) {
 			l[i] = s
 			return
 		}
 	}
+	// 扩展[]*memSeries
 	m[hash] = append(l, s)
 }
 
@@ -1483,6 +1564,7 @@ func newStripeSeries() *stripeSeries {
 
 // gc garbage collects old chunks that are strictly before mint and removes
 // series entirely that have no chunks left.
+// gc会清除那些严格在mint之前的老的chunks，并且移除整个series，如果它没有chunks了的话
 func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 	var (
 		deleted  = map[uint64]struct{}{}
@@ -1490,6 +1572,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 	)
 	// Run through all series and truncate old chunks. Mark those with no
 	// chunks left as deleted and store their ID.
+	// 遍历所有的series并且移除老的chunks，将那些没有chunks剩下的series标记为deleted并且存储它们的ID
 	for i := 0; i < stripeSize; i++ {
 		s.locks[i].Lock()
 
@@ -1499,6 +1582,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int) {
 				rmChunks += series.truncateChunksBefore(mint)
 
 				if len(series.chunks) > 0 || series.pendingCommit {
+					// 如果还有chunk或者还有sample等待commit，则将series标记为删除
 					series.Unlock()
 					continue
 				}
@@ -1553,12 +1637,15 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 }
 
 func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, bool) {
+	// 取模，找到相应的series
 	i := hash & stripeMask
 
 	s.locks[i].Lock()
 
+	// 更新hash列表
 	if prev := s.hashes[i].get(hash, series.lset); prev != nil {
 		s.locks[i].Unlock()
+		// 如果之前已经有了，就直接返回
 		return prev, false
 	}
 	s.hashes[i].set(hash, series)
@@ -1566,6 +1653,7 @@ func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, boo
 
 	i = series.ref & stripeMask
 
+	// 更新series列表
 	s.locks[i].Lock()
 	s.series[i][series.ref] = series
 	s.locks[i].Unlock()
@@ -1594,15 +1682,19 @@ type memSeries struct {
 
 	ref          uint64
 	lset         labels.Labels
+	// chunk中保存了sample数据
 	chunks       []*memChunk
 	headChunk    *memChunk
 	chunkRange   int64
+	// 第一个chunk的ID
 	firstChunkID int
 
 	nextAt        int64 // Timestamp at which to cut the next chunk.
 	sampleBuf     [4]sample
+	// 这个series是否有samples等待被commit
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 
+	// 当前chunk的appender
 	app chunkenc.Appender // Current appender for the chunk.
 }
 
@@ -1632,16 +1724,19 @@ func (s *memSeries) maxTime() int64 {
 }
 
 func (s *memSeries) cut(mint int64) *memChunk {
+	// 创建一个memory chunk
 	c := &memChunk{
 		chunk:   chunkenc.NewXORChunk(),
 		minTime: mint,
 		maxTime: math.MinInt64,
 	}
+	// 扩展chunks
 	s.chunks = append(s.chunks, c)
 	s.headChunk = c
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
+	// 设置下一次chunk启动的upper bound，在之后可能会动态地选择一个更早的时间戳
 	s.nextAt = rangeForTimestamp(mint, s.chunkRange)
 
 	app, err := c.chunk.Appender()
@@ -1673,13 +1768,16 @@ func (s *memSeries) reset() {
 }
 
 // appendable checks whether the given sample is valid for appending to the series.
+// appendable检测是否给定的sample对于加入到series中说合法的
 func (s *memSeries) appendable(t int64, v float64) error {
+	// 返回head chunk
 	c := s.head()
 	if c == nil {
 		return nil
 	}
 
 	if t > c.maxTime {
+		// 只能大于maxTime，表示新的时序
 		return nil
 	}
 	if t < c.maxTime {
@@ -1687,6 +1785,7 @@ func (s *memSeries) appendable(t int64, v float64) error {
 	}
 	// We are allowing exact duplicates as we can encounter them in valid cases
 	// like federation and erroring out at that time would be extremely noisy.
+	// 可能遇到完全相同的sample
 	if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
 		return ErrAmendSample
 	}
@@ -1707,9 +1806,11 @@ func (s *memSeries) chunkID(pos int) int {
 
 // truncateChunksBefore removes all chunks from the series that have not timestamp
 // at or after mint. Chunk IDs remain unchanged.
+// truncateChunksBefore从series中移除所有没有在mint之后的sample的chunks，Chunk IDs保持不变
 func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	var k int
 	for i, c := range s.chunks {
+		// 遍历chunks
 		if c.maxTime >= mint {
 			break
 		}
@@ -1727,15 +1828,18 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 }
 
 // append adds the sample (t, v) to the series.
+// append将sample (t, v)加入到series中
 func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
+	// 120个sample，压缩最优
 	const samplesPerChunk = 120
 
 	c := s.head()
 
 	if c == nil {
+		// 如果memSeries中还没有chunk，就创建一个
 		c = s.cut(t)
 		chunkCreated = true
 	}
@@ -1743,6 +1847,7 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 
 	// Out of order sample.
 	if c.maxTime >= t {
+		// 失序的sample，直接返回false
 		return false, chunkCreated
 	}
 	// If we reach 25% of a chunk's desired sample count, set a definitive time
@@ -1755,10 +1860,12 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 		c = s.cut(t)
 		chunkCreated = true
 	}
+	// 直接将t, v append到最新的chunk
 	s.app.Append(t, v)
 
 	c.maxTime = t
 
+	// 替换前四个samples
 	s.sampleBuf[0] = s.sampleBuf[1]
 	s.sampleBuf[1] = s.sampleBuf[2]
 	s.sampleBuf[2] = s.sampleBuf[3]

@@ -617,6 +617,7 @@ func main() {
 					return nil
 				}
 
+				// db打开之后，初始的reloading，失败就始终加载不成功
 				if err := reloadConfig(cfg.configFile, logger, reloaders...); err != nil {
 					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
@@ -840,6 +841,8 @@ func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 			if !alert.ResolvedAt.IsZero() {
 				a.EndsAt = alert.ResolvedAt
 			} else {
+				// 如果alert已经resolve了，则标记为alert.ResolvedAt
+				// 否则，标记为ValidUntil
 				a.EndsAt = alert.ValidUntil
 			}
 			res = append(res, a)

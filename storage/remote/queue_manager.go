@@ -397,9 +397,12 @@ func release(ls []prompb.Label) {
 
 // processExternalLabels merges externalLabels into ls. If ls contains
 // a label in externalLabels, the value in ls wins.
+// processExternalLabels将externalLabels加入ls，如果ls包含了externalLabels里的label
+// 则ls中的label获胜
 func processExternalLabels(ls tsdbLabels.Labels, externalLabels labels.Labels) labels.Labels {
 	i, j, result := 0, 0, make(labels.Labels, 0, len(ls)+len(externalLabels))
 	for i < len(ls) && j < len(externalLabels) {
+		// 优先加label name小的
 		if ls[i].Name < externalLabels[j].Name {
 			result = append(result, labels.Label{
 				Name:  ls[i].Name,
@@ -410,6 +413,7 @@ func processExternalLabels(ls tsdbLabels.Labels, externalLabels labels.Labels) l
 			result = append(result, externalLabels[j])
 			j++
 		} else {
+			// name相同，则优先设置ls
 			result = append(result, labels.Label{
 				Name:  ls[i].Name,
 				Value: ls[i].Value,
@@ -419,6 +423,7 @@ func processExternalLabels(ls tsdbLabels.Labels, externalLabels labels.Labels) l
 		}
 	}
 	for ; i < len(ls); i++ {
+		// 直接把剩余的ls或者externalLabels加上
 		result = append(result, labels.Label{
 			Name:  ls[i].Name,
 			Value: ls[i].Value,

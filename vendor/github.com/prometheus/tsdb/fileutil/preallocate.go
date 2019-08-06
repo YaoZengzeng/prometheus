@@ -22,8 +22,10 @@ import (
 // Preallocate tries to allocate the space for given
 // file. This operation is only supported on linux by a
 // few filesystems (btrfs, ext4, etc.).
+// Preallocate试着对给定的文件申请空间
 // If the operation is unsupported, no error will be returned.
 // Otherwise, the error encountered will be returned.
+// 如果不支持该操作，则不会返回错误
 func Preallocate(f *os.File, sizeInBytes int64, extendFile bool) error {
 	if sizeInBytes == 0 {
 		// fallocate will return EINVAL if length is 0; skip

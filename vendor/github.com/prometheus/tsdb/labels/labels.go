@@ -105,9 +105,11 @@ func (ls Labels) Map() map[string]string {
 
 // WithoutEmpty returns the labelset without empty labels.
 // May return the same labelset.
+// WithoutEmpty返回没有空的labels的labelset，可能会返回同样的labelset
 func (ls Labels) WithoutEmpty() Labels {
 	for _, v := range ls {
 		if v.Value == "" {
+			// 如果存在空的label，就重新构建
 			els := make(Labels, 0, len(ls)-1)
 			for _, v := range ls {
 				if v.Value != "" {

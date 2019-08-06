@@ -156,6 +156,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 }
 
 // QueryFunc processes PromQL queries.
+// QueryFunc处理PromQL queries
 type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, error)
 
 // EngineQueryFunc returns a new query function that executes instant queries against
@@ -187,11 +188,13 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 
 // A Rule encapsulates a vector expression which is evaluated at a specified
 // interval and acted upon (currently either recorded or used for alerting).
+// Rule封装了一个vector expression，它以特定的时间间隔被评估并且执行（当前为record或者用于alerting）
 type Rule interface {
 	Name() string
 	// Labels of the rule.
 	Labels() labels.Labels
 	// eval evaluates the rule, including any associated recording or alerting actions.
+	// eval执行rule，包含相关的recording或者alerting action
 	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
@@ -217,6 +220,7 @@ type Rule interface {
 }
 
 // Group is a set of rules that have a logical relation.
+// Group是一系列有着逻辑关系的rules
 type Group struct {
 	name                 string
 	file                 string
@@ -239,6 +243,7 @@ type Group struct {
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
+// NewGroup用给定的name, options以及rules创建一个新的Group
 func NewGroup(name, file string, interval time.Duration, rules []Rule, shouldRestore bool, opts *ManagerOptions) *Group {
 	metrics := opts.Metrics
 	if metrics == nil {
@@ -483,6 +488,7 @@ func (g *Group) CopyState(from *Group) {
 }
 
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
+// Eval运行一个评估周期，所有的rules都按顺序被评估一遍
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	for i, rule := range g.rules {
 		select {
@@ -505,6 +511,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.evalTotal.Inc()
 
+			// 执行表达式，获取结果
 			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
 			if err != nil {
 				// Canceled queries are intentional termination of queries. This normally
@@ -517,6 +524,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}
 
 			if ar, ok := rule.(*AlertingRule); ok {
+				// 如果rule的类型为AlertingRule，则发送alerts
 				ar.sendAlerts(ctx, ts, g.opts.ResendDelay, g.interval, g.opts.NotifyFunc)
 			}
 			var (
@@ -532,6 +540,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			seriesReturned := make(map[string]labels.Labels, len(g.seriesInPreviousEval[i]))
 			for _, s := range vector {
+				// 添加series
 				if _, err := app.Add(s.Metric, s.T, s.V); err != nil {
 					switch err {
 					case storage.ErrOutOfOrderSample:
@@ -544,6 +553,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						level.Warn(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
 				} else {
+					// 记录本次evaluate存在的series
 					seriesReturned[s.Metric.String()] = s.Metric
 				}
 			}
@@ -557,6 +567,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
+					// 如果series不再暴露了，将它标记为stale
 					_, err = app.Add(lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
 					switch err {
 					case nil:
@@ -568,9 +579,11 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					}
 				}
 			}
+			// 扩展rule sample
 			if err := app.Commit(); err != nil {
 				level.Warn(g.logger).Log("msg", "rule sample appending failed", "err", err)
 			} else {
+				// 记录这次eval中返回的series
 				g.seriesInPreviousEval[i] = seriesReturned
 			}
 		}(i, rule)
@@ -730,7 +743,9 @@ type ManagerOptions struct {
 	QueryFunc       QueryFunc
 	NotifyFunc      NotifyFunc
 	Context         context.Context
+	// 包含了Appender接口
 	Appendable      Appendable
+	// 也包括TSDB的接口
 	TSDB            storage.Storage
 	Logger          log.Logger
 	Registerer      prometheus.Registerer
@@ -748,6 +763,7 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.Metrics = NewGroupMetrics(o.Registerer)
 	}
 
+	// 一开始restore字段为false
 	m := &Manager{
 		groups: map[string]*Group{},
 		opts:   o,
@@ -784,6 +800,7 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
+// 根据配置的需求改变rule manager的状态，如果加载新的rules失败了，则恢复老的rule set
 func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -795,6 +812,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 		}
 		return errors.New("error loading rules, previous rule set restored")
 	}
+	// Update之后设置restore为false
 	m.restored = true
 
 	var wg sync.WaitGroup
@@ -804,6 +822,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 
 		// If there is an old group with the same identifier, stop it and wait for
 		// it to finish the current iteration. Then copy it into the new group.
+		// 如果有old group有着相同的identifier，则停止它并且等待它结束当前的iteration，之后将它拷贝到新的group
 		gn := groupKey(newg.name, newg.file)
 		oldg, ok := m.groups[gn]
 		delete(m.groups, gn)
@@ -825,6 +844,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 	}
 
 	// Stop remaining old groups.
+	// 停止剩余的old groups
 	for _, oldg := range m.groups {
 		oldg.stop()
 	}
@@ -836,6 +856,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 }
 
 // LoadGroups reads groups from a list of files.
+// LoadGroups从一系列的文件中读取groups
 func (m *Manager) LoadGroups(
 	interval time.Duration, externalLabels labels.Labels, filenames ...string,
 ) (map[string]*Group, []error) {
@@ -875,6 +896,7 @@ func (m *Manager) LoadGroups(
 					))
 					continue
 				}
+				// 扩展rules
 				rules = append(rules, NewRecordingRule(
 					r.Record,
 					expr,

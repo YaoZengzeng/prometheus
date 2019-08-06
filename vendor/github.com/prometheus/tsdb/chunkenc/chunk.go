@@ -21,6 +21,7 @@ import (
 )
 
 // Encoding is the identifier for a chunk encoding.
+// Encoding是一个chunk encoding的标识符
 type Encoding uint8
 
 func (e Encoding) String() string {

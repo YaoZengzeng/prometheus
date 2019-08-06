@@ -39,6 +39,7 @@ import (
 type IndexWriter interface {
 	// AddSymbols registers all string symbols that are encountered in series
 	// and other indices.
+	// AddSymbols注册所有在series中遇到的string symbols以及其他indices
 	AddSymbols(sym map[string]struct{}) error
 
 	// AddSeries populates the index writer with a series and its offsets
@@ -59,6 +60,7 @@ type IndexWriter interface {
 
 	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
+	// Close写入任何finalization并且关闭底层writer的相关资源
 	Close() error
 }
 
@@ -75,6 +77,8 @@ type IndexReader interface {
 	// The Postings here contain the offsets to the series inside the index.
 	// Found IDs are not strictly required to point to a valid Series, e.g. during
 	// background garbage collections.
+	// Postings返回label pair的postings list iterator，这里的Postings包含series在index中的offset
+	// Found IDs不一定要严格地指向valid Series
 	Postings(name, value string) (index.Postings, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
@@ -83,6 +87,7 @@ type IndexReader interface {
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
+	// Series返回由reference标识的series，填充给定的labels以及chunk metas
 	// Returns ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 
@@ -106,11 +111,14 @@ type StringTuples interface {
 }
 
 // ChunkWriter serializes a time block of chunked series data.
+// ChunkWriter序列化一个time block的chunked series data
 type ChunkWriter interface {
 	// WriteChunks writes several chunks. The Chunk field of the ChunkMetas
 	// must be populated.
+	// WriteChunks写入多个chunks，ChunkMetas的Chunk字段必须被填充
 	// After returning successfully, the Ref fields in the ChunkMetas
 	// are set and can be used to retrieve the chunks from the written data.
+	// 在成功返回之后，ChunkMetas的Ref字段会被设置，并且可以用来从写入的数据中取回chunks
 	WriteChunks(chunks ...chunks.Meta) error
 
 	// Close writes any required finalization and closes the resources
@@ -128,14 +136,18 @@ type ChunkReader interface {
 }
 
 // BlockReader provides reading access to a data block.
+// BlockReader提供了对于一个data block的访问权限
 type BlockReader interface {
 	// Index returns an IndexReader over the block's data.
+	// Index返回一个block的数据的IndexReader
 	Index() (IndexReader, error)
 
 	// Chunks returns a ChunkReader over the block's data.
+	// Chunks返回一个block的数据的ChunkReader
 	Chunks() (ChunkReader, error)
 
 	// Tombstones returns a TombstoneReader over the block's deleted data.
+	// Tombstones返回block的删除数据的TombstoneReader
 	Tombstones() (TombstoneReader, error)
 
 	// MinTime returns the min time of the block.
@@ -160,6 +172,7 @@ type BlockMeta struct {
 
 	// MinTime and MaxTime specify the time range all samples
 	// in the block are in.
+	// MinTime和MaxTime指定了在block里所有samples的时间范围
 	MinTime int64 `json:"minTime"`
 	MaxTime int64 `json:"maxTime"`
 
@@ -249,6 +262,7 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 		return 0, err
 	}
 
+	// 对block的元数据进行编码
 	jsonMeta, err := json.MarshalIndent(meta, "", "\t")
 	if err != nil {
 		return 0, err
@@ -263,6 +277,7 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 	}
 
 	// Force the kernel to persist the file on disk to avoid data loss if the host crashes.
+	// 强制让内核将文件持久化到磁盘，从而避免主机崩溃带来的数据丢失
 	if err := f.Sync(); err != nil {
 		merr.Add(err)
 		merr.Add(f.Close())
@@ -651,6 +666,7 @@ func (pb *Block) Snapshot(dir string) error {
 }
 
 // OverlapsClosedInterval returns true if the block overlaps [mint, maxt].
+// OverlapsClosedInterval返回true，如果block和[mint, maxt]有交集
 func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 	// The block itself is a half-open interval
 	// [pb.meta.MinTime, pb.meta.MaxTime).

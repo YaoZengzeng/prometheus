@@ -55,9 +55,11 @@ type AlertState int
 
 const (
 	// StateInactive is the state of an alert that is neither firing nor pending.
+	// StateInactive表明一个alert既不是firing也不是pending
 	StateInactive AlertState = iota
 	// StatePending is the state of an alert that has been active for less than
 	// the configured threshold duration.
+	// StatePending是指一个alert被激活了，但是持续的时间没有达到配置的threshold duration
 	StatePending
 	// StateFiring is the state of an alert that has been active for longer than
 	// the configured threshold duration.
@@ -117,6 +119,7 @@ type AlertingRule struct {
 	// output vector before an alert transitions from Pending to Firing state.
 	holdDuration time.Duration
 	// Extra labels to attach to the resulting alert sample vectors.
+	// 用于添加额外的labels到alert sample vectors中
 	labels labels.Labels
 	// Non-identifying key/value pairs.
 	annotations labels.Labels
@@ -124,6 +127,7 @@ type AlertingRule struct {
 	externalLabels map[string]string
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
+	// 只有在old state被restore之后才为true，只有在restoring之后才开始为ALERT_FOR_STATE持久化samples
 	restored bool
 	// Protects the below.
 	mtx sync.Mutex
@@ -137,6 +141,7 @@ type AlertingRule struct {
 	lastError error
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
+	// 一系列当前处于active状态（Pending或者Firing）的alerts，以它们一系列的labelset的fingerprint作为key
 	active map[uint64]*Alert
 
 	logger log.Logger
@@ -227,8 +232,10 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 		lb.Set(l.Name, l.Value)
 	}
 
+	// MericName为ALERTS
 	lb.Set(labels.MetricName, alertMetricName)
 	lb.Set(labels.AlertName, r.name)
+	// 设置alert的状态
 	lb.Set(alertStateLabel, alert.State.String())
 
 	s := promql.Sample{
@@ -251,6 +258,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 
 	s := promql.Sample{
 		Metric: lb.Labels(),
+		// V是ActiveAt，即开始活跃的时间
 		Point:  promql.Point{T: timestamp.FromTime(ts), V: v},
 	}
 	return s
@@ -291,10 +299,12 @@ func (r *AlertingRule) SetRestored(restored bool) {
 
 // resolvedRetention is the duration for which a resolved alert instance
 // is kept in memory state and consequentally repeatedly sent to the AlertManager.
+// resolvedRetention是一个已经解决的alert instance在内存中保存的时间间隔，从而能够持续地发送给AlertManager
 const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
+// Eval评估rule表达式，创建pending alerts并且触发或者移除之前pending的alerts
 func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
 	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
@@ -308,11 +318,13 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 
 	// Create pending alerts for any new vector elements in the alert expression
 	// or update the expression value for existing elements.
+	// 对于alert expression产生的新的vector elements创建pending alerts或者更新已有的elements的expression value
 	resultFPs := map[uint64]struct{}{}
 
 	var vec promql.Vector
 	for _, smpl := range res {
 		// Provide the alert information to the template.
+		// 将告警信息提供给template
 		l := make(map[string]string, len(smpl.Metric))
 		for _, lbl := range smpl.Metric {
 			l[lbl.Name] = lbl.Value
@@ -345,48 +357,63 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			return result
 		}
 
+		// 移除结果的Metric Name
 		lb := labels.NewBuilder(smpl.Metric).Del(labels.MetricName)
 
 		for _, l := range r.labels {
+			// 把alert的labels都加上
 			lb.Set(l.Name, expand(l.Value))
 		}
+		// 把AlertName也加上
 		lb.Set(labels.AlertName, r.Name())
 
 		annotations := make(labels.Labels, 0, len(r.annotations))
 		for _, a := range r.annotations {
+			// annotations转换为labels
 			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
 		}
 
 		lbs := lb.Labels()
 		h := lbs.Hash()
+		// 对alerts的labels取哈希
 		resultFPs[h] = struct{}{}
 
 		// Check whether we already have alerting state for the identifying label set.
 		// Update the last value and annotations if so, create a new alert entry otherwise.
+		// 检查对于identifying label set我们是否已经有了alerting state
+		// 如果是的话，更新最近的值以及annotaion，否则创建一个新的alert entry
 		if alert, ok := r.active[h]; ok && alert.State != StateInactive {
+			// 如果alert不是active，则修改Value以及annotation并且返回
 			alert.Value = smpl.V
 			alert.Annotations = annotations
 			continue
 		}
 
+		// 将alert标记为active
 		r.active[h] = &Alert{
 			Labels:      lbs,
 			Annotations: annotations,
+			// 直接标记为StatePending
 			ActiveAt:    ts,
+			// 新的alert状态都设置为Pending
 			State:       StatePending,
 			Value:       smpl.V,
 		}
 	}
 
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
+	// 检查任何的
 	for fp, a := range r.active {
 		if _, ok := resultFPs[fp]; !ok {
 			// If the alert was previously firing, keep it around for a given
 			// retention time so it is reported as resolved to the AlertManager.
+			// 如果alert之前是firing的，把它保持一段时间，这样它就会汇报给AlertManager并且标记为resolved
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
+				// 如果alert已经没有被触发了，或者已经被resolved超过了resolvedRetention，则将它从r.active中删除
 				delete(r.active, fp)
 			}
 			if a.State != StateInactive {
+				// 如果不再活跃了，则标记状态为StateInactive，且ResolvedAt为ts
 				a.State = StateInactive
 				a.ResolvedAt = ts
 			}
@@ -394,10 +421,12 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 
 		if a.State == StatePending && ts.Sub(a.ActiveAt) >= r.holdDuration {
+			// 如果alert被触发的时间大于holdDuration，则设置State为Firing
 			a.State = StateFiring
 			a.FiredAt = ts
 		}
 
+		// 默认r.restored为true
 		if r.restored {
 			vec = append(vec, r.sample(a, ts))
 			vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))

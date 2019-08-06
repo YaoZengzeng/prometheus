@@ -25,6 +25,7 @@ import (
 
 // Reader reads WAL records from an io.Reader.
 // Reader从一个io.Reader中读取WAL records
+// 将record都存放在rec中，每调用Next更新一次
 type Reader struct {
 	rdr       io.Reader
 	err       error
@@ -36,6 +37,7 @@ type Reader struct {
 }
 
 // NewReader returns a new reader.
+// NewReader返回一个新的reader
 func NewReader(r io.Reader) *Reader {
 	return &Reader{rdr: r}
 }

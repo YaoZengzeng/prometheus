@@ -288,6 +288,7 @@ type GlobalConfig struct {
 	// How frequently to evaluate rules by default.
 	EvaluationInterval model.Duration `yaml:"evaluation_interval,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
+	// 增加到这个Prometheus实例抓取的所有timeseries的labels
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
 }
 

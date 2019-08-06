@@ -50,6 +50,7 @@ import (
 )
 
 // XORChunk holds XOR encoded sample data.
+// XORChunk维护了经过XOR编码之后的sample数据
 type XORChunk struct {
 	b bstream
 }
@@ -66,6 +67,7 @@ func (c *XORChunk) Encoding() Encoding {
 }
 
 // Bytes returns the underlying byte slice of the chunk.
+// Bytes返回chunk的底层的字节切片
 func (c *XORChunk) Bytes() []byte {
 	return c.b.bytes()
 }
