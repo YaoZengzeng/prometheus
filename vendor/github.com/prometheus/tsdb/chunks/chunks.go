@@ -322,7 +322,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		// seq是当前写入的文件编号
 		seq = uint64(w.seq()) << 32
 	)
-	// 写入chunks
+	// 将各个内存中的chunks写入chunks文件
 	for i := range chks {
 		chk := &chks[i]
 
@@ -396,6 +396,7 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // of series data.
 // Reader实现了一个SeriesReader，对于series data的一系列序列化的byte stream
 type Reader struct {
+	// 底层的bytes包含了经过编码的series data
 	bs   []ByteSlice // The underlying bytes holding the encoded series data.
 	cs   []io.Closer // Closers for resources behind the byte slices.
 	size int64       // The total size of bytes in the reader.
@@ -432,6 +433,7 @@ func newReader(bs []ByteSlice, cs []io.Closer, pool chunkenc.Pool) (*Reader, err
 // given directory.
 // NewDirReader返回一个新的Reader，针对给定目录里的以顺序编号的文件
 func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
+	// 读取chunks里面的序列文件
 	files, err := sequenceFiles(dir)
 	if err != nil {
 		return nil, err

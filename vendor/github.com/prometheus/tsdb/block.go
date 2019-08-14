@@ -127,8 +127,10 @@ type ChunkWriter interface {
 }
 
 // ChunkReader provides reading access of serialized time series data.
+// ChunkReader提供对于序列化时间序列数据的访问
 type ChunkReader interface {
 	// Chunk returns the series data chunk with the given reference.
+	// Chunk返回指定reference的series data chunk
 	Chunk(ref uint64) (chunkenc.Chunk, error)
 
 	// Close releases all underlying resources of the reader.
@@ -238,6 +240,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		return nil, 0, err
 	}
+	// metadata的version必须为1
 	if m.Version != 1 {
 		return nil, 0, errors.Errorf("unexpected meta file version %d", m.Version)
 	}
@@ -245,6 +248,7 @@ func readMetaFile(dir string) (*BlockMeta, int64, error) {
 	return &m, int64(len(b)), nil
 }
 
+// 写入元数据文件
 func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error) {
 	meta.Version = 1
 
@@ -356,6 +360,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	}
 	closers = append(closers, tr)
 
+	// 创建Block
 	pb = &Block{
 		dir:               dir,
 		meta:              *meta,

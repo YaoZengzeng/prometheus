@@ -56,6 +56,8 @@ type Compactor interface {
 	// Plan returns a set of directories that can be compacted concurrently.
 	// The directories can be overlapping.
 	// Results returned when compactions are in progress are undefined.
+	// Plan返回一系列可以被并行压缩的目录，目录可以有重叠
+	// 当压缩正在进行的时候，返回的结果是不确定的
 	Plan(dir string) ([]string, error)
 
 	// Write persists a Block into a directory.
@@ -82,6 +84,7 @@ type Compactor interface {
 }
 
 // LeveledCompactor implements the Compactor interface.
+// LeveledCompactor实现了Compactor接口
 type LeveledCompactor struct {
 	metrics   *compactorMetrics
 	logger    log.Logger
@@ -176,6 +179,7 @@ type dirMeta struct {
 }
 
 // Plan returns a list of compactable blocks in the provided directory.
+// Plan返回给定目录一系列可以压缩的blocks
 func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 	dirs, err := blockDirs(dir)
 	if err != nil {
@@ -191,12 +195,14 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		// 读取各个block的metadata
 		dms = append(dms, dirMeta{dir, meta})
 	}
 	return c.plan(dms)
 }
 
 func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
+	// 首先对blocks进行排序
 	sort.Slice(dms, func(i, j int) bool {
 		return dms[i].meta.MinTime < dms[j].meta.MinTime
 	})
@@ -206,8 +212,10 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 		return res, nil
 	}
 	// No overlapping blocks, do compaction the usual way.
+	// 没有重合的blocks，能以正常的方式进行压缩
 	// We do not include a recently created block with max(minTime), so the block which was just created from WAL.
 	// This gives users a window of a full block size to piece-wise backup new data without having to care about data overlap.
+	// 我们没有包括最新的block，这个block刚刚从wal中创建，这给了用户一个窗口，能有一个完整的block size用于分段的备份，而不需要担心数据的重合
 	dms = dms[:len(dms)-1]
 
 	for _, dm := range c.selectDirs(dms) {
@@ -218,6 +226,7 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	}
 
 	// Compact any blocks with big enough time range that have >5% tombstones.
+	// 压缩任何有着大于5%的tombstones的blocks
 	for i := len(dms) - 1; i >= 0; i-- {
 		meta := dms[i].meta
 		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
@@ -233,7 +242,9 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 
 // selectDirs returns the dir metas that should be compacted into a single new block.
 // If only a single block range is configured, the result is always nil.
+// selectDirs返回应该被压缩为一个新的block的dir metas，如果只有一个block range，那么返回的结果总是nil
 func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
+	// 如果c.ranges小于2，则直接返回nil
 	if len(c.ranges) < 2 || len(ds) < 1 {
 		return nil
 	}
@@ -250,18 +261,22 @@ func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 		for _, p := range parts {
 			// Do not select the range if it has a block whose compaction failed.
 			for _, dm := range p {
+				// 不要选择compaction失败过的block
 				if dm.meta.Compaction.Failed {
 					continue Outer
 				}
 			}
 
+			// 求出整个block group的mint和maxt
 			mint := p[0].meta.MinTime
 			maxt := p[len(p)-1].meta.MaxTime
 			// Pick the range of blocks if it spans the full range (potentially with gaps)
 			// or is before the most recent block.
 			// This ensures we don't compact blocks prematurely when another one of the same
 			// size still fits in the range.
+			// 如果blocks跨过了足够长的时间，或者在最近的block之前，选择这些blocks，这不会过早地压缩blocks
 			if (maxt-mint == iv || maxt <= highTime) && len(p) > 1 {
+				// 选出一个合适的block group就返回
 				return p
 			}
 		}
@@ -271,6 +286,7 @@ func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 }
 
 // selectOverlappingDirs returns all dirs with overlapping time ranges.
+// selectOverlappingDirs返回有着重合的时间窗口的所有目录
 // It expects sorted input by mint and returns the overlapping dirs in the same order as received.
 func (c *LeveledCompactor) selectOverlappingDirs(ds []dirMeta) []string {
 	if len(ds) < 2 {
@@ -295,9 +311,12 @@ func (c *LeveledCompactor) selectOverlappingDirs(ds []dirMeta) []string {
 }
 
 // splitByRange splits the directories by the time range. The range sequence starts at 0.
+// splitByRange按照时间窗口对目录进行划分，range sequence从0开始
 //
 // For example, if we have blocks [0-10, 10-20, 50-60, 90-100] and the split range tr is 30
 // it returns [0-10, 10-20], [50-60], [90-100].
+// 比如，如果我们有blocks[0-10, 10-20, 50-60, 90-100]，并且分割的range tr是30，那么返回的结果是
+// [0-10, 10-20], [50-60], [90-100]
 func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 	var splitDirs [][]dirMeta
 
@@ -315,6 +334,7 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 		}
 		// Skip blocks that don't fall into the range. This can happen via mis-alignment or
 		// by being the multiple of the intended range.
+		// 如果范围大于range的block就跳过
 		if m.MaxTime > t0+tr {
 			i++
 			continue
@@ -330,6 +350,7 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 		}
 
 		if len(group) > 0 {
+			// 将tr范围内的block聚合成一个block
 			splitDirs = append(splitDirs, group)
 		}
 	}
@@ -337,9 +358,11 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 	return splitDirs
 }
 
+// 用多BlockMeta，构建一个新的BlockMeta
 func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	res := &BlockMeta{
 		ULID:    uid,
+		// 新的BlockMeta的MinTime就是第一个Block的MinTime
 		MinTime: blocks[0].MinTime,
 	}
 
@@ -356,8 +379,10 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 			res.Compaction.Level = b.Compaction.Level
 		}
 		for _, s := range b.Compaction.Sources {
+			// 记录blocks的各个sources
 			sources[s] = struct{}{}
 		}
+		// blocks都是新的block的Parent
 		res.Compaction.Parents = append(res.Compaction.Parents, BlockDesc{
 			ULID:    b.ULID,
 			MinTime: b.MinTime,
@@ -373,12 +398,14 @@ func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 		return res.Compaction.Sources[i].Compare(res.Compaction.Sources[j]) < 0
 	})
 
+	// 设置MaxTime为所有blocks的maxt
 	res.MaxTime = maxt
 	return res
 }
 
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
+// Compact在compactor的目录，根据提供的directories创建一个新的block
 func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
 	var (
 		blocks []BlockReader
@@ -398,6 +425,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 
 		// Use already open blocks if we can, to avoid
 		// having the index data in memory twice.
+		// 使用已经打开的blocks，如果可以的话，用来避免在内存中出现两次index数据
 		for _, o := range open {
 			if meta.ULID == o.Meta().ULID {
 				b = o
@@ -439,6 +467,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 				b.numBytesMeta = n
 			}
 			uid = ulid.ULID{}
+			// 压缩之后导致空的block
 			level.Info(c.logger).Log(
 				"msg", "compact blocks resulted in empty block",
 				"count", len(blocks),
@@ -484,6 +513,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		MinTime: mint,
 		MaxTime: maxt,
 	}
+	// 新建的block，压缩级别为1
 	meta.Compaction.Level = 1
 	meta.Compaction.Sources = []ulid.ULID{uid}
 
@@ -494,6 +524,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		}
 	}
 
+	// 将blocks写入
 	err := c.write(dest, meta, b)
 	if err != nil {
 		return uid, err
@@ -504,6 +535,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 		return ulid.ULID{}, nil
 	}
 
+	// 写入了block
 	level.Info(c.logger).Log(
 		"msg", "write block",
 		"mint", meta.MinTime,
@@ -536,7 +568,7 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 
 // write creates a new block that is the union of the provided blocks into dir.
 // It cleans up all files of the old blocks after completing successfully.
-// write创建一个新的block，它将提供的blocks合并到dir中，它在全部完成之后清除老到blocks的所有文件
+// write创建一个新的block，它将提供的blocks合并到dir中，它在全部完成之后清除老的blocks的所有文件
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	dir := filepath.Join(dest, meta.ULID.String())
 	tmp := dir + ".tmp"
@@ -556,6 +588,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		c.metrics.duration.Observe(time.Since(t).Seconds())
 	}(time.Now())
 
+	// 移除可能存在的tmp文件
 	if err = os.RemoveAll(tmp); err != nil {
 		return err
 	}
@@ -569,12 +602,14 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// 将所有block的数据写入tmp文件夹的chunk以及index file中
 	var chunkw ChunkWriter
 
+	// 创建一个chunk writer
 	chunkw, err = chunks.NewWriter(chunkDir(tmp))
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}
 	closers = append(closers, chunkw)
 	// Record written chunk sizes on level 1 compactions.
+	// 当压缩的级别为level 1时，记录写入的chunk size
 	if meta.Compaction.Level == 1 {
 		chunkw = &instrumentedChunkWriter{
 			ChunkWriter: chunkw,
@@ -627,6 +662,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 
 	// Create an empty tombstones file.
+	// 创建一个新的tombstones文件
 	if _, err := writeTombstoneFile(c.logger, tmp, newMemTombstones()); err != nil {
 		return errors.Wrap(err, "write new tombstones file")
 	}
@@ -641,11 +677,13 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 		}
 	}()
 
+	// 对临时的block目录进行同步
 	if err := df.Sync(); err != nil {
 		return errors.Wrap(err, "sync temporary dir file")
 	}
 
 	// Close temp dir before rename block dir (for windows platform).
+	// 在重命名block目录之前，关闭临时目录
 	if err = df.Close(); err != nil {
 		return errors.Wrap(err, "close temporary dir")
 	}
@@ -686,6 +724,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	globalMaxt := blocks[0].MaxTime()
 	// 合并多个block的series，indexer和tombstone
+	// 压缩head时，仅仅只有一个block
 	for i, b := range blocks {
 		select {
 		case <-c.ctx.Done():
@@ -701,6 +740,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 				level.Warn(c.logger).Log("msg", "found overlapping blocks during compaction", "ulid", meta.ULID)
 			}
 			if b.MaxTime() > globalMaxt {
+				// 全局最大的max time
 				globalMaxt = b.MaxTime()
 			}
 		}
@@ -756,6 +796,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	// We fully rebuild the postings list index from merged series.
 	// 从merged series重新构建posting list index
 	var (
+		// 重建一个新的mempostings
 		postings = index.NewMemPostings()
 		values   = map[string]stringset{}
 		i        = uint64(0)
@@ -774,9 +815,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		default:
 		}
 
+		// 这里的chunks是没有被完全删除的
 		lset, chks, dranges := set.At() // The chunks here are not fully deleted.
 		if overlapping {
 			// If blocks are overlapping, it is possible to have unsorted chunks.
+			// 如果blocks有交叉，则可能没有排好序的chunks
 			sort.Slice(chks, func(i, j int) bool {
 				return chks[i].MinTime < chks[j].MinTime
 			})
@@ -839,6 +882,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 		}
 
+		// 经过处理的chunks变为mergedChks
 		mergedChks := chks
 		if overlapping {
 			mergedChks, err = chunks.MergeOverlappingChunks(chks)
@@ -856,6 +900,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			return errors.Wrap(err, "add series")
 		}
 
+		// 写入chunk的数目
 		meta.Stats.NumChunks += uint64(len(mergedChks))
 		// 一个series的所有chunk都写入了
 		meta.Stats.NumSeries++
@@ -864,11 +909,13 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		}
 
 		for _, chk := range mergedChks {
+			// 循环利用chunks
 			if err := c.chunkPool.Put(chk.Chunk); err != nil {
 				return errors.Wrap(err, "put chunk")
 			}
 		}
 
+		// values关联所有label name相关的values
 		for _, l := range lset {
 			valset, ok := values[l.Name]
 			if !ok {
@@ -890,14 +937,18 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		s = s[:0]
 
 		for x := range v {
+			// 将value扩展到s
 			s = append(s, x)
 		}
+		// 写入label name和相关的value
 		if err := indexw.WriteLabelIndex([]string{n}, s); err != nil {
 			return errors.Wrap(err, "write label index")
 		}
 	}
 
 	for _, l := range postings.SortedKeys() {
+		// 将postings写入index文件
+		// 写入一组label，以及和它相关的一串series id
 		if err := indexw.WritePostings(l.Name, l.Value, postings.Get(l.Name, l.Value)); err != nil {
 			return errors.Wrap(err, "write postings")
 		}
@@ -927,6 +978,7 @@ func newCompactionSeriesSet(i IndexReader, c ChunkReader, t TombstoneReader, p i
 }
 
 func (c *compactionSeriesSet) Next() bool {
+	// 获取下一个series id
 	if !c.p.Next() {
 		// 所有id都遍历完毕
 		return false
@@ -1019,6 +1071,7 @@ func (c *compactionMerger) compare() int {
 	return labels.Compare(a, b)
 }
 
+// Next()填充下一个要用的labels以及[]chunks.Meta
 func (c *compactionMerger) Next() bool {
 	if !c.aok && !c.bok || c.Err() != nil {
 		return false
@@ -1052,6 +1105,7 @@ func (c *compactionMerger) Next() bool {
 		}
 
 		c.l = append(c.l[:0], l...)
+		// 将一致的chunks合并起来
 		c.c = append(append(c.c[:0], ca...), cb...)
 		c.intervals = ra
 

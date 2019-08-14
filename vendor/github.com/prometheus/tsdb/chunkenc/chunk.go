@@ -35,6 +35,7 @@ func (e Encoding) String() string {
 }
 
 // The different available chunk encodings.
+// 不同的可用的chunk编码方式
 const (
 	EncNone Encoding = iota
 	EncXOR
@@ -47,15 +48,18 @@ type Chunk interface {
 	Encoding() Encoding
 	Appender() (Appender, error)
 	Iterator() Iterator
+	// 返回samples的数目
 	NumSamples() int
 }
 
 // Appender adds sample pairs to a chunk.
+// Appender增加sample pairs到一个chunk中
 type Appender interface {
 	Append(int64, float64)
 }
 
 // Iterator is a simple iterator that can only get the next value.
+// Iterator是一个简单的iterator，只能用于获取下一个value
 type Iterator interface {
 	At() (int64, float64)
 	Err() error
@@ -91,6 +95,7 @@ func NewPool() Pool {
 	return &pool{
 		xor: sync.Pool{
 			New: func() interface{} {
+				// 返回XORChunk的函数
 				return &XORChunk{b: bstream{}}
 			},
 		},

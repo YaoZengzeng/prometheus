@@ -163,6 +163,7 @@ type RecordEncoder struct {
 }
 
 // Series appends the encoded series to b and returns the resulting slice.
+// Series将编码后的series增加到b并且返回结果的slice
 func (e *RecordEncoder) Series(series []RefSeries, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(RecordSeries))

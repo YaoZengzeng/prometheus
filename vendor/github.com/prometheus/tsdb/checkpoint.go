@@ -137,8 +137,9 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 			sgmRange = append(sgmRange, wal.SegmentRange{Dir: dir, Last: math.MaxInt32})
 		}
 
+		// 这个sgmRange表示读取wal中的内容
 		sgmRange = append(sgmRange, wal.SegmentRange{Dir: w.Dir(), First: from, Last: to})
-		// 根据sgmRange构建sgmReder
+		// 根据sgmRange构建sgmReader
 		sgmReader, err = wal.NewSegmentsRangeReader(sgmRange...)
 		if err != nil {
 			return nil, errors.Wrap(err, "create segment reader")
@@ -177,6 +178,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 		buf     []byte
 		recs    [][]byte
 	)
+	// 从checkpoint以及wal中读取，再记录到新的wal，也就是新的checkpoint中
 	for r.Next() {
 		series, samples, tstones = series[:0], samples[:0], tstones[:0]
 
@@ -208,6 +210,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 				buf = enc.Series(repl, buf)
 			}
 			stats.TotalSeries += len(series)
+			// 记录丢弃的series的数目
 			stats.DroppedSeries += len(series) - len(repl)
 
 		case RecordSamples:
@@ -220,6 +223,7 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 			repl := samples[:0]
 			for _, s := range samples {
 				if s.T >= mint {
+					// 小于mint的samples都丢弃
 					repl = append(repl, s)
 				}
 			}
@@ -254,10 +258,12 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 		default:
 			return nil, errors.New("invalid record type")
 		}
+		// 如果没有新增内容
 		if len(buf[start:]) == 0 {
 			// 所有的record都被遗弃了，则直接跳过
 			continue // All contents discarded.
 		}
+		// 记录一次records
 		recs = append(recs, buf[start:])
 
 		// Flush records in 1 MB increments.
@@ -285,6 +291,8 @@ func Checkpoint(w *wal.WAL, from, to int, keep func(id uint64) bool, mint int64)
 	if err := cp.Close(); err != nil {
 		return nil, errors.Wrap(err, "close checkpoint")
 	}
+	// 对checkpoint进行重命名
+	// 实际上新的checkpoint保存的也是mint之后的数据
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
 		return nil, errors.Wrap(err, "rename checkpoint directory")
 	}

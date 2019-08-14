@@ -53,6 +53,7 @@ func NewMemPostings() *MemPostings {
 
 // NewUnorderedMemPostings returns a memPostings that is not safe to be read from
 // until ensureOrder was called once.
+// NewUnorderedMemPostings返回一个memPostings，直到ensureOrder被调用了一次才能读取
 func NewUnorderedMemPostings() *MemPostings {
 	return &MemPostings{
 		m:       make(map[string]map[string][]uint64, 512),
@@ -61,6 +62,7 @@ func NewUnorderedMemPostings() *MemPostings {
 }
 
 // SortedKeys returns a list of sorted label keys of the postings.
+// sortedKeys返回一系列postings已经排好序的label keys
 func (p *MemPostings) SortedKeys() []labels.Label {
 	p.mtx.RLock()
 	keys := make([]labels.Label, 0, len(p.m))
@@ -94,6 +96,7 @@ func (p *MemPostings) Get(name, value string) Postings {
 	if lp == nil {
 		return EmptyPostings()
 	}
+	// 返回的还是List类型的Posting
 	return newListPostings(lp...)
 }
 
@@ -139,6 +142,7 @@ func (p *MemPostings) EnsureOrder() {
 }
 
 // Delete removes all ids in the given map from the postings lists.
+// Delete从postings lists中移除所有给定map的ids
 func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 	var keys, vals []string
 
@@ -150,6 +154,7 @@ func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 	}
 	p.mtx.RUnlock()
 
+	// 逐个对于label name进行处理
 	for _, n := range keys {
 		p.mtx.RLock()
 		vals = vals[:0]
@@ -160,12 +165,15 @@ func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 
 		// For each posting we first analyse whether the postings list is affected by the deletes.
 		// If yes, we actually reallocate a new postings list.
+		// 对于每个posting，我们首先分析这个postings list是否受删除影响，如果是的话，我们实际上重新申请了一个新的postings list
 		for _, l := range vals {
 			// Only lock for processing one postings list so we don't block reads for too long.
+			// 只在处理单个的postings list时进行锁定，这样我们就不会在读取上阻塞太久
 			p.mtx.Lock()
 
 			found := false
 			for _, id := range p.m[n][l] {
+				// 看看是否有匹配的id
 				if _, ok := deleted[id]; ok {
 					found = true
 					break
@@ -178,6 +186,7 @@ func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 			repl := make([]uint64, 0, len(p.m[n][l]))
 
 			for _, id := range p.m[n][l] {
+				// 从postings中移除已经不存在的series id
 				if _, ok := deleted[id]; !ok {
 					repl = append(repl, id)
 				}
@@ -185,12 +194,14 @@ func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 			if len(repl) > 0 {
 				p.m[n][l] = repl
 			} else {
+				// 如果没有剩余的id了就直接移除
 				delete(p.m[n], l)
 			}
 			p.mtx.Unlock()
 		}
 		p.mtx.Lock()
 		if len(p.m[n]) == 0 {
+			// 如果label name相关的value没有了，则直接移除
 			delete(p.m, n)
 		}
 		p.mtx.Unlock()
@@ -218,6 +229,7 @@ func (p *MemPostings) Add(id uint64, lset labels.Labels) {
 	p.mtx.Lock()
 
 	for _, l := range lset {
+		// 将labels和series id相关
 		p.addFor(id, l)
 	}
 	// allPostingsKey和所有的id相关联
@@ -235,6 +247,7 @@ func (p *MemPostings) addFor(id uint64, l labels.Label) {
 		p.m[l.Name] = nm
 	}
 	list := append(nm[l.Value], id)
+	// list是包含l.name和l.value的series列表
 	nm[l.Value] = list
 
 	if !p.ordered {

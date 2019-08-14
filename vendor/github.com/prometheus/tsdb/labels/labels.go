@@ -34,6 +34,7 @@ type Label struct {
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
+// Labels是排好序的labels，在实例化的时候就已经保证了
 type Labels []Label
 
 func (ls Labels) Len() int           { return len(ls) }
@@ -58,6 +59,7 @@ func (ls Labels) String() string {
 }
 
 // Hash returns a hash value for the label set.
+// Hash返回label set的哈希值
 func (ls Labels) Hash() uint64 {
 	b := make([]byte, 0, 1024)
 

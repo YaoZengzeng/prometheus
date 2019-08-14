@@ -128,6 +128,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 }
 
 // CreateSegment creates a new segment k in dir.
+// CreateSegment在dir创建一个新的segment k
 func CreateSegment(dir string, k int) (*Segment, error) {
 	f, err := os.OpenFile(SegmentName(dir, k), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -241,6 +242,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 
 	_, j, err := w.Segments()
 	// Index of the Segment we want to open and write to.
+	// 我们想要打开并且写入的Segment
 	writeSegmentIndex := 0
 	if err != nil {
 		return nil, errors.Wrap(err, "get segment range")
@@ -463,6 +465,7 @@ func (w *WAL) setSegment(segment *Segment) error {
 	if err != nil {
 		return err
 	}
+	// 已经写入的page的数目
 	w.donePages = int(stat.Size() / pageSize)
 	w.currentSegment.Set(float64(segment.Index()))
 	return nil
@@ -674,6 +677,7 @@ func (w *WAL) Segments() (first, last int, err error) {
 
 // Truncate drops all segments before i.
 // 截取所有在i之前的segments
+// 截取的wal的内容应该都保存在checkpoint当中
 func (w *WAL) Truncate(i int) (err error) {
 	w.truncateTotal.Inc()
 	defer func() {
@@ -771,12 +775,14 @@ func listSegments(dir string) (refs []segmentRef, err error) {
 }
 
 // SegmentRange groups segments by the directory and the first and last index it includes.
+// SegmentRange将目录中的segments进行group并且其中包含的第一个或者最后一个index
 type SegmentRange struct {
 	Dir         string
 	First, Last int
 }
 
 // NewSegmentsReader returns a new reader over all segments in the directory.
+// NewSegmentsReader返回一个对于目录里的segments的新的reader
 func NewSegmentsReader(dir string) (io.ReadCloser, error) {
 	return NewSegmentsRangeReader(SegmentRange{dir, -1, -1})
 }

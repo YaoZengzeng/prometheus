@@ -68,9 +68,13 @@ type indexWriterStage uint8
 
 const (
 	idxStageNone indexWriterStage = iota
+	// 写入symbols的阶段
 	idxStageSymbols
+	// 写入series的阶段
 	idxStageSeries
+	// 写入label的index的阶段
 	idxStageLabelIndex
+	// 写入postings的阶段
 	idxStagePostings
 	idxStageDone
 )
@@ -304,6 +308,7 @@ func (w *Writer) writeMeta() error {
 }
 
 // AddSeries adds the series one at a time along with its chunks.
+// AddSeries随着series的chunks将series写入index文件
 func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta) error {
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
@@ -313,6 +318,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	}
 
 	if _, ok := w.seriesOffsets[ref]; ok {
+		// 如果series已经添加了，则报错
 		return errors.Errorf("series with reference %d already added", ref)
 	}
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
@@ -327,8 +333,10 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	w.seriesOffsets[ref] = w.pos / 16
 
 	w.buf2.Reset()
+	// 写入label set中label的数目
 	w.buf2.PutUvarint(len(lset))
 
+	// 将sereies各个label在symbols的坐标写入
 	for _, l := range lset {
 		// here we have an index for the symbol file if v2, otherwise it's an offset
 		index, ok := w.symbols[l.Name]
@@ -348,6 +356,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	// 每个section都以长度开头
 	w.buf2.PutUvarint(len(chunks))
 
+	// 写入和series相关的各个chunk的信息
 	if len(chunks) > 0 {
 		c := chunks[0]
 		// 写入chunk的最小时间，跨越的时间段以及c.Ref，Ref中包含了chunk所在文件的位置以及在文件中的位置
@@ -399,6 +408,7 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 	w.buf1.Reset()
 	w.buf2.Reset()
 
+	// 写入symbol的数目
 	w.buf2.PutBE32int(len(symbols))
 
 	w.symbols = make(map[string]uint32, len(symbols))
@@ -410,8 +420,9 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 		w.buf2.PutUvarintStr(s)
 	}
 
-	// buf1写入buf2的长度
+	// buf1写入buf2的长度，即symbols的总长度
 	w.buf1.PutBE32int(w.buf2.Len())
+	// 写入crc32
 	w.buf2.PutHash(w.crc32)
 
 	err := w.write(w.buf1.Get(), w.buf2.Get())

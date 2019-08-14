@@ -324,7 +324,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db 
 		}
 	}
 
-	// 创建head
+	// 创建head，opts.BlockRanges[0]为2小时
 	db.head, err = NewHead(r, l, wlog, opts.BlockRanges[0])
 	if err != nil {
 		return nil, err
@@ -467,9 +467,11 @@ func (db *DB) compact() (err error) {
 			break
 		}
 		mint := db.head.MinTime()
+		// 指定一个范围的maxt
 		maxt := rangeForTimestamp(mint, db.head.chunkRange)
 
 		// Wrap head into a range that bounds all reads to it.
+		// 将head聚合为一个BlockReader
 		head := &rangeHead{
 			head: db.head,
 			mint: mint,
@@ -526,6 +528,7 @@ func (db *DB) compact() (err error) {
 		default:
 		}
 
+		// 对已有的blocks进行压缩
 		uid, err := db.compactor.Compact(db.dir, plan, db.blocks)
 		if err != nil {
 			return errors.Wrapf(err, "compact %s", plan)
@@ -577,15 +580,19 @@ func (db *DB) reload() (err error) {
 	// This makes it resilient against the process crashing towards the end of a compaction.
 	// Creation of a new block and deletion of its parents cannot happen atomically.
 	// By creating blocks with their parents, we can pick up the deletion where it left off during a crash.
+	// 已经被parents替换的Corrupted blocks可以被安全地忽略以及删除，这能够给压缩的过程中进程崩溃带来弹性
+	// 新block的创建和它的parent的删除不能原子地发生
 	for _, block := range loadable {
 		for _, b := range block.Meta().Compaction.Parents {
 			// 如果block是可加载的，则它的parent可以从corrupted以及deletable中移除
 			delete(corrupted, b.ULID)
+			// parent加入deletable，也是要被删除的
 			deletable[b.ULID] = nil
 		}
 	}
 	if len(corrupted) > 0 {
 		// Close all new blocks to release the lock for windows.
+		// 关闭所有新的blocks
 		for _, block := range loadable {
 			if _, loaded := db.getBlock(block.Meta().ULID); !loaded {
 				// 如果loadable中的block没有被加载，则直接关闭
@@ -602,6 +609,7 @@ func (db *DB) reload() (err error) {
 		blocksSize int64
 	)
 	for _, block := range loadable {
+		// 如果可加载的block存在于deletable中，则将它从可加载的blocks中删除
 		if _, ok := deletable[block.Meta().ULID]; ok {
 			// 如果ULID相同，则更新deletable中的block
 			deletable[block.Meta().ULID] = block
@@ -628,6 +636,7 @@ func (db *DB) reload() (err error) {
 	// 首先交换blocks，让之后创建的reader能够看到
 	db.mtx.Lock()
 	oldBlocks := db.blocks
+	// 记录db中当前的可用的blocks
 	db.blocks = loadable
 	db.mtx.Unlock()
 
@@ -657,6 +666,7 @@ func (db *DB) reload() (err error) {
 		return nil
 	}
 
+	// maxt是最新的block的MaxTime
 	maxt := loadable[len(loadable)-1].Meta().MaxTime
 
 	// 根据最新持久化的块的maxt来对head进行截取
@@ -679,7 +689,7 @@ func (db *DB) openBlocks() (blocks []*Block, corrupted map[ulid.ULID]error, err 
 		}
 
 		// See if we already have the block in memory or open it otherwise.
-		// 看看我们在内存中是否已经又了block，否则打开它
+		// 看看我们在内存中是否已经有了block，否则打开它
 		block, ok := db.getBlock(meta.ULID)
 		if !ok {
 			block, err = OpenBlock(db.logger, dir, db.chunkPool)
@@ -736,6 +746,7 @@ func (db *DB) beyondTimeRetention(blocks []*Block) (deleteable map[ulid.ULID]*Bl
 	for i, block := range blocks {
 		// The difference between the first block and this block is larger than
 		// the retention period so any blocks after that are added as deleteable.
+		// 如果block和第一个block的MaxTime之差超过了RetentionDuration，则将该block标记为deletable
 		if i > 0 && blocks[0].Meta().MaxTime-block.Meta().MaxTime > int64(db.opts.RetentionDuration) {
 			for _, b := range blocks[i:] {
 				deleteable[b.meta.ULID] = b
@@ -779,10 +790,13 @@ func (db *DB) beyondSizeRetention(blocks []*Block) (deleteable map[ulid.ULID]*Bl
 func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 	for ulid, block := range blocks {
 		if block != nil {
+			// 如果block不是nil，仅仅将它关闭
 			if err := block.Close(); err != nil {
 				level.Warn(db.logger).Log("msg", "closing block failed", "err", err)
 			}
 		}
+		// 移除过时的blocks
+		// 但是block该移除还是要移除
 		if err := os.RemoveAll(filepath.Join(db.dir, ulid.String())); err != nil {
 			return errors.Wrapf(err, "delete obsolete block %s", ulid)
 		}
@@ -1070,6 +1084,7 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 }
 
 func rangeForTimestamp(t int64, width int64) (maxt int64) {
+	// 向上取width的整数倍
 	return (t/width)*width + width
 }
 

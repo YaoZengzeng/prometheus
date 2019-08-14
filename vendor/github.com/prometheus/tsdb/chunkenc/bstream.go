@@ -44,8 +44,11 @@ package chunkenc
 import "io"
 
 // bstream is a stream of bits.
+// bstream是bits流
 type bstream struct {
+	// 数据流
 	stream []byte // the data stream
+	// 当前字节中合法的bits的数目
 	count  uint8  // how many bits are valid in current byte
 }
 
