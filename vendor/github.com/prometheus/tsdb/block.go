@@ -71,6 +71,7 @@ type IndexReader interface {
 	Symbols() (map[string]struct{}, error)
 
 	// LabelValues returns the possible label values.
+	// LabelValues返回可能的label values
 	LabelValues(names ...string) (index.StringTuples, error)
 
 	// Postings returns the postings list iterator for the label pair.

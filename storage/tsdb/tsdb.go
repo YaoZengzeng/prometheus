@@ -186,6 +186,8 @@ func Open(path string, l log.Logger, r prometheus.Registerer, opts *Options) (*t
 	}
 	// Start with smallest block duration and create exponential buckets until the exceed the
 	// configured maximum block duration.
+	// 从最小的block duration开始，以指数创建buckets，直到超过配置的最大的block duration
+	// 10是步数，3是步长，即rngs是[2h, 6h, 18h, 54h, 112h...]
 	rngs := tsdb.ExponentialBlockRanges(int64(time.Duration(opts.MinBlockDuration).Seconds()*1000), 10, 3)
 
 	for i, v := range rngs {
@@ -326,6 +328,7 @@ func (a appender) AddFast(_ labels.Labels, ref uint64, t int64, v float64) error
 func (a appender) Commit() error   { return a.a.Commit() }
 func (a appender) Rollback() error { return a.a.Rollback() }
 
+// 将labels.Matcher转换为tsdbLabels.Matcher
 func convertMatcher(m *labels.Matcher) tsdbLabels.Matcher {
 	switch m.Type {
 	case labels.MatchEqual:

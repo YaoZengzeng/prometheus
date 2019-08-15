@@ -69,6 +69,7 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	queriers := make([]Querier, 0, 1+len(f.secondaries))
 
 	// Add primary querier
+	// 首先会添加主querier
 	primaryQuerier, err := f.primary.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
@@ -76,9 +77,11 @@ func (f *fanout) Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 	queriers = append(queriers, primaryQuerier)
 
 	// Add secondary queriers
+	// 之后再增加一系列的副querier
 	for _, storage := range f.secondaries {
 		querier, err := storage.Querier(ctx, mint, maxt)
 		if err != nil {
+			// 如果有一个远程读的Querier创建有错误，则把之前的Querier关闭
 			NewMergeQuerier(primaryQuerier, queriers).Close()
 			return nil, err
 		}
@@ -204,6 +207,8 @@ type mergeQuerier struct {
 // NB NewMergeQuerier will return NoopQuerier if no queriers are passed to it,
 // and will filter NoopQueriers from its arguments, in order to reduce overhead
 // when only one querier is passed.
+// NewMergeQuerier返回一个新的Querier，它合并输入的queriers的结果，如果没有传入queriers
+// 那么会返回NoopQuerier，并且会去除参数中的NoopQueriers，从而降低overhead，如果只穿入了一个querier
 func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 	filtered := make([]Querier, 0, len(queriers))
 	for _, querier := range queriers {
@@ -231,11 +236,14 @@ func NewMergeQuerier(primaryQuerier Querier, queriers []Querier) Querier {
 }
 
 // Select returns a set of series that matches the given label matchers.
+// Select返回匹配给定label matchers的一系列series
 func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher) (SeriesSet, Warnings, error) {
 	seriesSets := make([]SeriesSet, 0, len(q.queriers))
 	var warnings Warnings
+	// 遍历各个queriers
 	for _, querier := range q.queriers {
 		set, wrn, err := querier.Select(params, matchers...)
+		// seriesset和某个querier相关联
 		q.setQuerierMap[set] = querier
 		if wrn != nil {
 			warnings = append(warnings, wrn...)
@@ -243,6 +251,7 @@ func (q *mergeQuerier) Select(params *SelectParams, matchers ...*labels.Matcher)
 		if err != nil {
 			q.failedQueriers[querier] = struct{}{}
 			// If the error source isn't the primary querier, return the error as a warning and continue.
+			// 如果error source不是primary querier，返回error作为一个warning并且继续
 			if querier != q.primaryQuerier {
 				warnings = append(warnings, err)
 				continue
@@ -382,6 +391,7 @@ type mergeSeriesSet struct {
 
 // NewMergeSeriesSet returns a new series set that merges (deduplicates)
 // series returned by the input series sets when iterating.
+// NewMergeSeriesSet返回一个新的series set，它会在遍历输入的series set的时候进行去重合并
 func NewMergeSeriesSet(sets []SeriesSet, querier *mergeQuerier) SeriesSet {
 	if len(sets) == 1 {
 		return sets[0]
@@ -472,6 +482,7 @@ func (h seriesSetHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 func (h seriesSetHeap) Less(i, j int) bool {
 	a, b := h[i].At().Labels(), h[j].At().Labels()
+	// 按照labels进行排序
 	return labels.Compare(a, b) < 0
 }
 

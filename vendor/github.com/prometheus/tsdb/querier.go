@@ -186,6 +186,7 @@ func (q *verticalQuerier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, err
 }
 
 // NewBlockQuerier returns a querier against the reader.
+// NewBlockQuerier返回一个对于reader的querier
 func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
 	indexr, err := b.Index()
 	if err != nil {
@@ -362,6 +363,8 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 			if isNot && matchesEmpty { // l!="foo"
 				// If the label can't be empty and is a Not and the inner matcher
 				// doesn't match empty, then subtract it out at the end.
+				// 如果label不能为空，且Matcher是一个Not，则inner matcher不能匹配空，
+				// 则在最后将它去除
 				it, err := postingsForMatcher(ix, nm.Matcher)
 				if err != nil {
 					return nil, err
@@ -370,6 +373,7 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 			} else if isNot && !matchesEmpty { // l!=""
 				// If the label can't be empty and is a Not, but the inner matcher can
 				// be empty we need to use inversePostingsForMatcher.
+				// 如果label不能为空并且Matcher是一个Not，因此内部的matcher可以为空，我们需要使用inversePostingsForMatcher
 				it, err := inversePostingsForMatcher(ix, nm.Matcher)
 				if err != nil {
 					return nil, err
@@ -382,6 +386,7 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 				if err != nil {
 					return nil, err
 				}
+				// 首先把匹配的都加上
 				its = append(its, it)
 			}
 		} else { // l=""
@@ -390,6 +395,8 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 			// 如果对于一个labelname的matchers能够选择empty value，那么它也可以选择没有这个label name的series
 			// https://github.com/prometheus/prometheus/issues/3575 and
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
+			// 选择不匹配m的，再将它从最后的结果中删去
+			// inversePostingsForMatcher只会返回设置了label name但是不匹配m的postings
 			it, err := inversePostingsForMatcher(ix, m)
 			if err != nil {
 				return nil, err
@@ -399,7 +406,7 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 	}
 
 	// If there's nothing to subtract from, add in everything and remove the notIts later.
-	// 如果没有东西需要减去，把所有都加上，再移除notIts
+	// 如果没有匹配的，只有不匹配的，把所有都加上，再移除notIts
 	if len(its) == 0 && len(notIts) != 0 {
 		allPostings, err := ix.Postings(index.AllPostingsKey())
 		if err != nil {
@@ -408,6 +415,7 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 		its = append(its, allPostings)
 	}
 
+	// 对结果做交集
 	it := index.Intersect(its...)
 
 	for _, n := range notIts {
@@ -415,11 +423,13 @@ func PostingsForMatchers(ix IndexReader, ms ...labels.Matcher) (index.Postings, 
 		it = index.Without(it, n)
 	}
 
+	// 对结果进行排序
 	return ix.SortedPostings(it), nil
 }
 
 func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
+	// 这个方法不会返回没有label的postings
 
 	// Fast-path for equal matching.
 	// 对于equal的匹配
@@ -475,6 +485,7 @@ func postingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error
 }
 
 // inversePostingsForMatcher eeturns the postings for the series with the label name set but not matching the matcher.
+// inversePostingsForMatcher返回有着label name但是不匹配matcher的series
 func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings, error) {
 	tpls, err := ix.LabelValues(m.Name())
 	if err != nil {
@@ -488,6 +499,7 @@ func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings
 			return nil, err
 		}
 
+		// 和Matcher不匹配的就按照结果返回
 		if !m.Matches(vals[0]) {
 			res = append(res, vals[0])
 		}
@@ -495,6 +507,7 @@ func inversePostingsForMatcher(ix IndexReader, m labels.Matcher) (index.Postings
 
 	var rit []index.Postings
 	for _, v := range res {
+		// 找到不匹配Matcher的所有id，但是这些id一定有label name
 		it, err := ix.Postings(m.Name(), v)
 		if err != nil {
 			return nil, err

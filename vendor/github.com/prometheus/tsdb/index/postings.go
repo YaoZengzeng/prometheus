@@ -280,10 +280,12 @@ func ExpandPostings(p Postings) (res []uint64, err error) {
 // Postings提供对于一个postings list的迭代访问
 type Postings interface {
 	// Next advances the iterator and returns true if another value was found.
+	// Next移动iterator并且返回true，如果可以找到另一个值
 	Next() bool
 
 	// Seek advances the iterator to value v or greater and returns
 	// true if a value was found.
+	// 移动iterator直到大于或者等于v，并且返回true，如果找到了一个value的话
 	Seek(v uint64) bool
 
 	// At returns the value at the current iterator position.
@@ -394,6 +396,7 @@ func (it *intersectPostings) Err() error {
 }
 
 // Merge returns a new iterator over the union of the input iterators.
+// Merge返回一个新的iterator，它是输入的iterators的一个组合
 func Merge(its ...Postings) Postings {
 	if len(its) == 0 {
 		return EmptyPostings()
@@ -554,6 +557,7 @@ type removedPostings struct {
 func newRemovedPostings(full, remove Postings) *removedPostings {
 	return &removedPostings{
 		full:   full,
+		// 并不是直接把remove删除，而是在迭代的时候进行判断
 		remove: remove,
 	}
 }

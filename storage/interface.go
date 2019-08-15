@@ -63,9 +63,11 @@ type Querier interface {
 	Select(*SelectParams, ...*labels.Matcher) (SeriesSet, Warnings, error)
 
 	// LabelValues returns all potential values for a label name.
+	// LabelValues返回一个label name所有可能的值
 	LabelValues(name string) ([]string, Warnings, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
+	// LabelNames返回block中所有唯一的label name，以排好序的方式
 	LabelNames() ([]string, Warnings, error)
 
 	// Close releases the resources of the Querier.

@@ -40,8 +40,10 @@ const (
 )
 
 // TombstoneReader gives access to tombstone intervals by series reference.
+// TombstoneReader能通过series reference访问tombstone intervals
 type TombstoneReader interface {
 	// Get returns deletion intervals for the series with the given reference.
+	// 通过给定的reference获取series的deletion intervals
 	Get(ref uint64) (Intervals, error)
 
 	// Iter calls the given function for each encountered interval.

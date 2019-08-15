@@ -590,10 +590,12 @@ func (w *Writer) Close() error {
 }
 
 // StringTuples provides access to a sorted list of string tuples.
+// StringTuples提供对于一个排好序的string元组的访问
 type StringTuples interface {
 	// Total number of tuples in the list.
 	Len() int
 	// At returns the tuple at position i.
+	// At返回在位置i的tuple
 	At(i int) ([]string, error)
 }
 

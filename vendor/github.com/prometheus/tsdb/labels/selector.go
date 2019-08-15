@@ -32,6 +32,7 @@ func (s Selector) Matches(labels Labels) bool {
 }
 
 // Matcher specifies a constraint for the value of a label.
+// Matcher指定了对于一个label的value的限制
 type Matcher interface {
 	// Name returns the label name the matcher should apply to.
 	Name() string
@@ -42,6 +43,7 @@ type Matcher interface {
 }
 
 // EqualMatcher matches on equality.
+// EqualMatcher进行完整的匹配
 type EqualMatcher struct {
 	name, value string
 }
@@ -101,6 +103,7 @@ type NotMatcher struct {
 	Matcher
 }
 
+// NotMacher的Matches就是对内置的Matcher的结果取反
 func (m NotMatcher) Matches(v string) bool { return !m.Matcher.Matches(v) }
 func (m NotMatcher) String() string        { return fmt.Sprintf("not(%s)", m.Matcher.String()) }
 

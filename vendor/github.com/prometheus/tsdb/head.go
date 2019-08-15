@@ -61,6 +61,7 @@ var (
 // Head handles reads and writes of time series data within a time window.
 // Head处理对于一个时间窗口内的时间序列的读写问题
 type Head struct {
+	// chunkRange一般为第一个range，即两个小时
 	chunkRange int64
 	metrics    *headMetrics
 	wal        *wal.WAL
@@ -243,12 +244,14 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, chunkRange int
 	h := &Head{
 		wal:        wal,
 		logger:     l,
+		// chunkRange即第一个时间窗，大小为2h
 		chunkRange: chunkRange,
 		minTime:    math.MaxInt64,
 		maxTime:    math.MinInt64,
 		series:     newStripeSeries(),
 		values:     map[string]stringset{},
 		symbols:    map[string]struct{}{},
+		// 创建一个没有排好序的MemPostings
 		postings:   index.NewUnorderedMemPostings(),
 		deleted:    map[uint64]int{},
 	}
@@ -548,6 +551,7 @@ func (h *Head) Init(minValidTime int64) error {
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 
 	if h.wal == nil {
+		// 如果wal为空，则直接返回
 		return nil
 	}
 
@@ -740,6 +744,7 @@ func (h *Head) Truncate(mint int64) (err error) {
 
 // initTime initializes a head with the first timestamp. This only needs to be called
 // for a completely fresh head with an empty WAL.
+// initTime用第一个时间戳初始化head，这之后在完全新的head以及空的wal的时候被调用
 // Returns true if the initialization took an effect.
 func (h *Head) initTime(t int64) (initialized bool) {
 	if !atomic.CompareAndSwapInt64(&h.minTime, math.MaxInt64, t) {
@@ -789,6 +794,7 @@ func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 	if a.app != nil {
 		return a.app.Add(lset, t, v)
 	}
+	// 用采集到的第一个样本的t初始化head
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
@@ -825,6 +831,7 @@ func (h *Head) Appender() Appender {
 	// picks up the first appended timestamp as the base.
 	// head cache可能还没有一个开始点，init appender选取第一个appended timestamp作为base
 	if h.MinTime() == math.MaxInt64 {
+		// 如果head还没有初始化，即prometheus第一次启动时，创建initAppender
 		return &initAppender{head: h}
 	}
 	return h.appender()
@@ -836,6 +843,7 @@ func (h *Head) appender() *headAppender {
 		head: h,
 		// Set the minimum valid time to whichever is greater the head min valid time or the compaciton window.
 		// This ensures that no samples will be added within the compaction window to avoid races.
+		// 这确保不会有在压缩窗口的samples被加入从而防止冲突
 		minValidTime: max(atomic.LoadInt64(&h.minValidTime), h.MaxTime()-h.chunkRange/2),
 		// appender的mint和maxt都是自己定义的
 		mint:         math.MaxInt64,
@@ -894,9 +902,10 @@ func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, erro
 	}
 
 	// Ensure no empty labels have gotten through.
+	// 确保labels里面没有空的
 	lset = lset.WithoutEmpty()
 
-	// 对labels取哈希值
+	// 从head中获取series的id，如果series不存在就创建一个
 	s, created := a.head.getOrCreate(lset.Hash(), lset)
 	if created {
 		// 如果是新建的series，则扩展a.series
@@ -1485,6 +1494,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool) {
 
 // 用id获取或者创建Head里的series
 func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool) {
+	// id包含在MemSeries中
 	s := newMemSeries(lset, id, h.chunkRange)
 
 	s, created := h.series.getOrSet(hash, s)
@@ -1533,7 +1543,7 @@ type seriesHashmap map[uint64][]*memSeries
 
 func (m seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	for _, s := range m[hash] {
-		// 有多个labelset哈希值相等的话，直接比较
+		// 有labelset相等的话，直接比较
 		if s.lset.Equals(lset) {
 			return s
 		}
@@ -1576,7 +1586,9 @@ func (m seriesHashmap) del(hash uint64, lset labels.Labels) {
 // stripeSeries锁住对ID以及哈希用模进行划分以防止锁争用
 // locks被扩展了，以防止在同一个cache line中
 type stripeSeries struct {
+	// 一切有着相同id的模的series，再用真正的id作为map的key，用以区分
 	series [stripeSize]map[uint64]*memSeries
+	// 一系列有着相同哈希值的模的series
 	hashes [stripeSize]seriesHashmap
 	locks  [stripeSize]stripeLock
 }

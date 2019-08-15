@@ -84,10 +84,13 @@ func (ls Labels) Get(name string) string {
 }
 
 // Equals returns whether the two label sets are equal.
+// Equals返回两个label sets是否相等
 func (ls Labels) Equals(o Labels) bool {
+	// 首先比较长度是否相等
 	if len(ls) != len(o) {
 		return false
 	}
+	// 再比较内容是否相等
 	for i, l := range ls {
 		if o[i] != l {
 			return false

@@ -91,16 +91,21 @@ type Options struct {
 
 // Appender allows appending a batch of data. It must be completed with a
 // call to Commit or Rollback and must not be reused afterwards.
+// Appender允许添加一系列的数据，它必须调用Commit或者Rollback之后才算完成并且在之后不能再重用
 //
 // Operations on the Appender interface are not goroutine-safe.
 type Appender interface {
 	// Add adds a sample pair for the given series. A reference number is
 	// returned which can be used to add further samples in the same or later
 	// transactions.
+	// Add为给定的series添加一个sample对，它会返回一个reference number，可以在以后的事件中
+	// 快速添加sample
 	// Returned reference numbers are ephemeral and may be rejected in calls
 	// to AddFast() at any point. Adding the sample via Add() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
+	// 返回的reference numbers是临时的，可能在之后调用AddFast()的时候被拒绝，通过Add()增加这个sample
+	// 会返回一个新的reference number
 	Add(l labels.Labels, t int64, v float64) (uint64, error)
 
 	// AddFast adds a sample pair for the referenced series. It is generally
@@ -108,9 +113,11 @@ type Appender interface {
 	AddFast(ref uint64, t int64, v float64) error
 
 	// Commit submits the collected samples and purges the batch.
+	// Commit提交收集到的samples并且移除batch
 	Commit() error
 
 	// Rollback rolls back all modifications made in the appender so far.
+	// Rollback取消到目前为止对于appender的修改
 	Rollback() error
 }
 
@@ -1040,7 +1047,9 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	defer db.mtx.RUnlock()
 
 	for _, b := range db.blocks {
+		// 查看block和[mint, maxt]是否有交集
 		if b.OverlapsClosedInterval(mint, maxt) {
+			// 是的话，扩展blocks以及blockMeta
 			blocks = append(blocks, b)
 			blockMetas = append(blockMetas, b.Meta())
 		}
