@@ -913,6 +913,7 @@ func (r *Reader) LabelIndices() ([][]string, error) {
 }
 
 // Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
+// Series读取给定ID的series并且将labels以及chunks写入lbls和chks
 func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded

@@ -129,6 +129,7 @@ func (q *querier) sel(qs []Querier, ms []labels.Matcher) (SeriesSet, error) {
 		return EmptySeriesSet(), nil
 	}
 	if len(qs) == 1 {
+		// 最终只剩下一个Querier，就直接调用它的Select()方法
 		return qs[0].Select(ms...)
 	}
 	l := len(qs) / 2
@@ -224,6 +225,7 @@ type blockQuerier struct {
 	mint, maxt int64
 }
 
+// Select返回的是一个SeriesSet，可以用来遍历任何匹配的Series
 func (q *blockQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
 	base, err := LookupChunkSeries(q.index, q.tombstones, ms...)
 	if err != nil {
@@ -234,6 +236,7 @@ func (q *blockQuerier) Select(ms ...labels.Matcher) (SeriesSet, error) {
 			// set返回到是SeriesSet
 			set:    base,
 			chunks: q.chunks,
+			// 其中包含了这个块的最大时间和最小时间
 			mint:   q.mint,
 			maxt:   q.maxt,
 		},
@@ -562,7 +565,9 @@ func mergeStrings(a, b []string) []string {
 
 // SeriesSet contains a set of series.
 type SeriesSet interface {
+	// 下一个Series是否存在
 	Next() bool
+	// 当前所在的Series
 	At() Series
 	Err() error
 }
@@ -731,6 +736,7 @@ type baseChunkSeries struct {
 	index      IndexReader
 	tombstones TombstoneReader
 
+	// 当前series的lset，chks以及intervals
 	lset      labels.Labels
 	chks      []chunks.Meta
 	intervals Intervals
@@ -744,11 +750,13 @@ func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher)
 	if tr == nil {
 		tr = newMemTombstones()
 	}
+	// 找出所有匹配的series
 	p, err := PostingsForMatchers(ir, ms...)
 	if err != nil {
 		return nil, err
 	}
 	return &baseChunkSeries{
+		// baseChunkSeries包含匹配的postings，以及index，以及tombstones
 		p:          p,
 		index:      ir,
 		tombstones: tr,
@@ -756,6 +764,7 @@ func LookupChunkSeries(ir IndexReader, tr TombstoneReader, ms ...labels.Matcher)
 }
 
 func (s *baseChunkSeries) At() (labels.Labels, []chunks.Meta, Intervals) {
+	// 返回当前series的label set，chunks以及intervals
 	return s.lset, s.chks, s.intervals
 }
 
@@ -771,6 +780,7 @@ func (s *baseChunkSeries) Next() bool {
 	for s.p.Next() {
 		// index.Postings返回匹配的series的Ref
 		ref := s.p.At()
+		// 根据ref直接加载series
 		if err := s.index.Series(ref, &lset, &chkMetas); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
 			// Postings可能太过陈旧，如果底层没有series存在的话就跳过
@@ -783,6 +793,7 @@ func (s *baseChunkSeries) Next() bool {
 
 		s.lset = lset
 		s.chks = chkMetas
+		// 从tombstones获取intervals
 		s.intervals, err = s.tombstones.Get(s.p.At())
 		if err != nil {
 			s.err = errors.Wrap(err, "get tombstones")
@@ -795,6 +806,7 @@ func (s *baseChunkSeries) Next() bool {
 			chks := make([]chunks.Meta, 0, len(s.chks))
 			for _, chk := range s.chks {
 				if !(Interval{chk.MinTime, chk.MaxTime}.isSubrange(s.intervals)) {
+					// 只有不在intervals里面的chunks才可以
 					chks = append(chks, chk)
 				}
 			}
@@ -814,12 +826,15 @@ func (s *baseChunkSeries) Next() bool {
 // with known chunk references. It filters out chunks that do not fit the
 // given time range.
 // populatedChunkSeries为一系列已经知道chunk references的series从store中加载chunk data
+// 它过滤掉不符合时间窗口的chunks
 type populatedChunkSeries struct {
 	set        ChunkSeriesSet
 	chunks     ChunkReader
 	mint, maxt int64
 
 	err       error
+	// 以下字段是当前series到chks，labels集合以及intervals
+	// 此处的series是在请求的时间范围[mint, maxt]以内的
 	chks      []chunks.Meta
 	lset      labels.Labels
 	intervals Intervals
@@ -836,6 +851,7 @@ func (s *populatedChunkSeries) Next() bool {
 		lset, chks, dranges := s.set.At()
 
 		for len(chks) > 0 {
+			// 直到选到MaxTime大于s.mint的chunk
 			if chks[0].MaxTime >= s.mint {
 				break
 			}
@@ -843,22 +859,29 @@ func (s *populatedChunkSeries) Next() bool {
 		}
 
 		// This is to delete in place while iterating.
+		// 从头开始遍历，找到第一个MinTime大于max的块
 		for i, rlen := 0, len(chks); i < rlen; i++ {
+			// rlen - len(chks)是
 			j := i - (rlen - len(chks))
 			c := &chks[j]
 
 			// Break out at the first chunk that has no overlap with mint, maxt.
+			// 如果块的MinTime也大于s.maxt，则退出
 			if c.MinTime > s.maxt {
 				chks = chks[:j]
 				break
 			}
 
+			// 根据Ref从ChunkReader中获取Chunk
+			// 填充chunk meta
 			c.Chunk, s.err = s.chunks.Chunk(c.Ref)
 			if s.err != nil {
 				// This means that the chunk has be garbage collected. Remove it from the list.
+				// 如果发生了错误，则意味着chunk被垃圾回收了，将它从list中移除
 				if s.err == ErrNotFound {
 					s.err = nil
 					// Delete in-place.
+					// 直接把chks[j]跳过并且
 					s.chks = append(chks[:j], chks[j+1:]...)
 				}
 				return false
@@ -866,6 +889,7 @@ func (s *populatedChunkSeries) Next() bool {
 		}
 
 		if len(chks) == 0 {
+			// 如果没有chks，说明这个series没有在要求的时间窗口内的数据，则直接跳过
 			continue
 		}
 
@@ -897,6 +921,8 @@ func (s *blockSeriesSet) Next() bool {
 	for s.set.Next() {
 		// 从ChunkSeriesSet中获取lset，chunks
 		lset, chunks, dranges := s.set.At()
+		// 将当前的Series移动到s.cur字段
+		// 获取到真正的chunk series
 		s.cur = &chunkSeries{
 			labels: lset,
 			chunks: chunks,
@@ -945,8 +971,10 @@ type SeriesIterator interface {
 	// Seek移动iterator到给定的timestamp，如果在t没有value，则移动到第一个t之后到value
 	Seek(t int64) bool
 	// At returns the current timestamp/value pair.
+	// At返回当前的timestamp/value对
 	At() (t int64, v float64)
 	// Next advances the iterator by one.
+	// Next向前移动一个iterator
 	Next() bool
 	// Err returns the current error.
 	Err() error
@@ -1119,6 +1147,8 @@ func (it *verticalMergeSeriesIterator) Err() error {
 
 // chunkSeriesIterator implements a series iterator on top
 // of a list of time-sorted, non-overlapping chunks.
+// chunkSeriesIterator
+// chunkSeriesIterator在一系列按时间排序的，没有重叠的chunks之上实现一个series iterator
 type chunkSeriesIterator struct {
 	chunks []chunks.Meta
 
@@ -1138,9 +1168,11 @@ func newChunkSeriesIterator(cs []chunks.Meta, dranges Intervals, mint, maxt int6
 	}
 	return &chunkSeriesIterator{
 		chunks: cs,
+		// i是当前chunk的下标
 		i:      0,
 		cur:    it,
 
+		// chunksSeries中包含的mint和maxt
 		mint: mint,
 		maxt: maxt,
 
@@ -1154,6 +1186,7 @@ func (it *chunkSeriesIterator) Seek(t int64) (ok bool) {
 	}
 
 	// Seek to the first valid value after t.
+	// 如果t比it.mint还小，则设置t为it.mint
 	if t < it.mint {
 		t = it.mint
 	}
@@ -1187,6 +1220,7 @@ func (it *chunkSeriesIterator) Next() bool {
 		t, _ := it.cur.At()
 
 		if t < it.mint {
+			// 如果根本找不到it.mint，就返回false
 			if !it.Seek(it.mint) {
 				return false
 			}
@@ -1202,16 +1236,19 @@ func (it *chunkSeriesIterator) Next() bool {
 	if err := it.cur.Err(); err != nil {
 		return false
 	}
+	// 如果已经到了最后一个chunks，则返回false
 	if it.i == len(it.chunks)-1 {
 		return false
 	}
 
 	it.i++
+	// 更新当前的chunk iterator
 	it.cur = it.chunks[it.i].Chunk.Iterator()
 	if len(it.intervals) > 0 {
 		it.cur = &deletedIterator{it: it.cur, intervals: it.intervals}
 	}
 
+	// 直接递归调用
 	return it.Next()
 }
 
@@ -1221,6 +1258,7 @@ func (it *chunkSeriesIterator) Err() error {
 
 // deletedIterator wraps an Iterator and makes sure any deleted metrics are not
 // returned.
+// deletedIterator封装一个Iterator并且确保任何删除的metrics不会被返回
 type deletedIterator struct {
 	it chunkenc.Iterator
 

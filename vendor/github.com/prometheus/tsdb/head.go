@@ -546,6 +546,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 // 它应该在使用一个appender之前被使用，这样就能限制摄入的samples在head min valid time以内
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime = minValidTime
+	// 加载了之后就进行排序，之后的插入都将是有序的
 	defer h.postings.EnsureOrder()
 	// 在加载了wal之后，从head中移除过时的data
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
@@ -1268,6 +1269,8 @@ func (h *headChunkReader) Close() error {
 
 // packChunkID packs a seriesID and a chunkID within it into a global 8 byte ID.
 // It panicks if the seriesID exceeds 5 bytes or the chunk ID 3 bytes.
+// packChunkID将一个seriesID和一个chunkID打包封装进一个全局的8字节的ID
+// 它会panic入seriesID超过5字节或者chunk ID超过3字节
 func packChunkID(seriesID, chunkID uint64) uint64 {
 	if seriesID > (1<<40)-1 {
 		// series ID不能超过5个字节
@@ -1444,9 +1447,11 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 		// Do not expose chunks that are outside of the specified range.
 		// 不要暴露指定的范围之外的chunks
 		if !c.OverlapsClosedInterval(h.mint, h.maxt) {
+			// 和h.mint和h.maxt没有重合的chunk直接跳过
 			continue
 		}
 		// Set the head chunks as open (being appended to).
+		// 将最新的chunks设置maxTime，
 		maxTime := c.maxTime
 		if s.headChunk == c {
 			maxTime = math.MaxInt64
@@ -1794,6 +1799,7 @@ func (s *memSeries) cut(mint int64) *memChunk {
 	// 创建一个memory chunk
 	c := &memChunk{
 		chunk:   chunkenc.NewXORChunk(),
+		// 将引发创建这个chunk的sample的t作为这个chunk的minTime
 		minTime: mint,
 		// maxTime是最小值
 		maxTime: math.MinInt64,
@@ -1807,6 +1813,7 @@ func (s *memSeries) cut(mint int64) *memChunk {
 	// 设置下一次chunk启动的upper bound，在之后可能会动态地选择一个更早的时间戳
 	s.nextAt = rangeForTimestamp(mint, s.chunkRange)
 
+	// 构建一个Appender
 	app, err := c.chunk.Appender()
 	if err != nil {
 		// 不应该出现错误的地方，直接panic
@@ -1922,6 +1929,7 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 	}
 	// If we reach 25% of a chunk's desired sample count, set a definitive time
 	// at which to start the next chunk.
+	// 如果我们已经到了一个chunk期望的sample数目的25%，设置一个确定的时间用于启动下一个chunk
 	// At latest it must happen at the timestamp set when the chunk was cut.
 	if numSamples == samplesPerChunk/4 {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
@@ -1949,6 +1957,8 @@ func (s *memSeries) append(t int64, v float64) (success, chunkCreated bool) {
 // computeChunkEndTime estimates the end timestamp based the beginning of a chunk,
 // its current timestamp and the upper bound up to which we insert data.
 // It assumes that the time range is 1/4 full.
+// computeChunkEndTime根据一个chunk的初始值，当前的timestamp以及上限预估我们插入数据的end timestamp，
+// 假设时间窗口已经1/4满了
 func computeChunkEndTime(start, cur, max int64) int64 {
 	a := (max - start) / ((cur - start + 1) * 4)
 	if a == 0 {

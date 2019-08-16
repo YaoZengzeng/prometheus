@@ -237,6 +237,7 @@ type xorIterator struct {
 	err    error
 }
 
+// 当前sample的t和v
 func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
@@ -245,6 +246,7 @@ func (it *xorIterator) Err() error {
 	return it.err
 }
 
+// 是否还有下一个sample存在
 func (it *xorIterator) Next() bool {
 	if it.err != nil || it.numRead == it.numTotal {
 		return false

@@ -239,6 +239,7 @@ func (*memTombstones) Close() error {
 }
 
 // Interval represents a single time-interval.
+// Interval代表单个的时间范围，这个时间范围里的时间序列被删除了
 type Interval struct {
 	Mint, Maxt int64
 }

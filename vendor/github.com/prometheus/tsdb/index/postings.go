@@ -84,6 +84,7 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 }
 
 // Get returns a postings list for the given label pair.
+// Get返回给定的label pair的postings list
 func (p *MemPostings) Get(name, value string) Postings {
 	var lp []uint64
 	p.mtx.RLock()
@@ -107,6 +108,8 @@ func (p *MemPostings) All() Postings {
 
 // EnsureOrder ensures that all postings lists are sorted. After it returns all further
 // calls to add and addFor will insert new IDs in a sorted manner.
+// EnsureOrder确保所有的postings lists都是有序的，在它返回之后，所有之后的add以及addFor调用都会按序插入新的IDs
+// 调用这个函数时还没有新的数据输入也不能进行读取
 func (p *MemPostings) EnsureOrder() {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
@@ -122,6 +125,7 @@ func (p *MemPostings) EnsureOrder() {
 	wg.Add(n)
 
 	for i := 0; i < n; i++ {
+		// 创建n个goroutine进行排序
 		go func() {
 			for l := range workc {
 				sort.Slice(l, func(i, j int) bool { return l[i] < l[j] })
@@ -150,6 +154,7 @@ func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 	// can by definition not be affected by any of the given deletes.
 	p.mtx.RLock()
 	for n := range p.m {
+		// 获取所有的keys
 		keys = append(keys, n)
 	}
 	p.mtx.RUnlock()
@@ -158,6 +163,7 @@ func (p *MemPostings) Delete(deleted map[uint64]struct{}) {
 	for _, n := range keys {
 		p.mtx.RLock()
 		vals = vals[:0]
+		// 获取一个key对应的所有values
 		for v := range p.m[n] {
 			vals = append(vals, v)
 		}
@@ -310,6 +316,7 @@ func (e errPostings) Err() error       { return e.err }
 var emptyPostings = errPostings{}
 
 // EmptyPostings returns a postings list that's always empty.
+// EmptyPostings返回一个postings list，它总是空
 // NOTE: Returning EmptyPostings sentinel when index.Postings struct has no postings is recommended.
 // It triggers optimized flow in other functions like Intersect, Without etc.
 func EmptyPostings() Postings {
@@ -638,6 +645,7 @@ func (it *ListPostings) At() uint64 {
 	return it.cur
 }
 
+// 必须先调用Next()，才能调用At()
 func (it *ListPostings) Next() bool {
 	if len(it.list) > 0 {
 		it.cur = it.list[0]
@@ -658,6 +666,7 @@ func (it *ListPostings) Seek(x uint64) bool {
 	}
 
 	// Do binary search between current position and end.
+	// 在当前位置和end之间做二分查找
 	i := sort.Search(len(it.list), func(i int) bool {
 		return it.list[i] >= x
 	})

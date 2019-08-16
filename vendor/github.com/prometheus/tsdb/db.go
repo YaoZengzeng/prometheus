@@ -1039,6 +1039,7 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 // Querier returns a new querier over the data partition for the given time range.
 // A goroutine must not handle more than one open Querier.
 // Querier返回一个给定时间段的数据的querier，一个goroutine不能处理超过一个打开的Querier
+// 在创建Querier的时候已经指定了mint和maxt，因此在Select的时候无需指定
 func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	var blocks []BlockReader
 	var blockMetas []BlockMeta
