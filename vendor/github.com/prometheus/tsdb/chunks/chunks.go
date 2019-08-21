@@ -330,6 +330,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 		// 从chk.Ref能找到chunk在哪个文件中，以及在文件中的位置
 		chk.Ref = seq | uint64(w.n)
 
+		// 写入chunk到大小
 		n := binary.PutUvarint(b[:], uint64(len(chk.Chunk.Bytes())))
 
 		if err := w.write(b[:n]); err != nil {

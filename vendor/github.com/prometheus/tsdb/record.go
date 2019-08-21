@@ -169,6 +169,7 @@ func (e *RecordEncoder) Series(series []RefSeries, b []byte) []byte {
 	buf.PutByte(byte(RecordSeries))
 
 	for _, s := range series {
+		// 将series的Ref以及labels都进行编码
 		buf.PutBE64(s.Ref)
 		buf.PutUvarint(len(s.Labels))
 
@@ -183,6 +184,7 @@ func (e *RecordEncoder) Series(series []RefSeries, b []byte) []byte {
 // Samples appends the encoded samples to b and returns the resulting slice.
 func (e *RecordEncoder) Samples(samples []RefSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
+	// Record的类型
 	buf.PutByte(byte(RecordSamples))
 
 	if len(samples) == 0 {
@@ -191,6 +193,8 @@ func (e *RecordEncoder) Samples(samples []RefSample, b []byte) []byte {
 
 	// Store base timestamp and base reference number of first sample.
 	// All samples encode their timestamp and ref as delta to those.
+	// 存储第一个sample的timestamp以及reference number
+	// 所有sample都将它们的timestamp和ref作为delta写入
 	first := samples[0]
 
 	buf.PutBE64(first.Ref)

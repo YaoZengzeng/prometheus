@@ -67,6 +67,7 @@ func (e *Encbuf) PutVarint64(x int64) {
 }
 
 // PutUvarintStr writes a string to the buffer prefixed by its varint length (in bytes!).
+// PutUvarintStr将一个string写入到buffer中并且以string到长度作为前缀
 func (e *Encbuf) PutUvarintStr(s string) {
 	b := *(*[]byte)(unsafe.Pointer(&s))
 	e.PutUvarint(len(b))

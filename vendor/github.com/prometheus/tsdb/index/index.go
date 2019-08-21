@@ -76,6 +76,7 @@ const (
 	idxStageLabelIndex
 	// 写入postings的阶段
 	idxStagePostings
+	// 最后处于Done的阶段
 	idxStageDone
 )
 
@@ -128,9 +129,13 @@ type Writer struct {
 	buf2    encoding.Encbuf
 	uint32s []uint32
 
+	// symbols的偏移
 	symbols       map[string]uint32 // symbol offsets
+	// series的偏移
 	seriesOffsets map[uint64]uint64 // offsets of series
+	// label index的偏移值
 	labelIndexes  []hashEntry       // label index offsets
+	// posting lists的偏移值
 	postings      []hashEntry       // postings lists offsets
 
 	// Hold last series to validate that clients insert new series in order.
@@ -153,6 +158,7 @@ type TOC struct {
 }
 
 // NewTOCFromByteSlice return parsed TOC from given index byte slice.
+// NewTOCFromByteSlice从给定的index byte slice中解析出TOC
 func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	if bs.Len() < indexTOCLen {
 		return nil, encoding.ErrInvalidSize
@@ -171,6 +177,7 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	}
 
 	return &TOC{
+		// 分别获取各个section的位置
 		Symbols:           d.Be64(),
 		Series:            d.Be64(),
 		LabelIndices:      d.Be64(),
@@ -231,6 +238,7 @@ func (w *Writer) write(bufs ...[]byte) error {
 	for _, b := range bufs {
 		// 将buf写入缓存
 		n, err := w.fbuf.Write(b)
+		// w.pos是当前写到的index的位置
 		w.pos += uint64(n)
 		if err != nil {
 			return err
@@ -283,13 +291,19 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 
 	case idxStageDone:
 		w.toc.LabelIndicesTable = w.pos
+		// Label offset table存储了一系列的label offset条目
+		// 每个label offset entry维护了name以及它的value在label index section中的位移
 		if err := w.writeOffsetTable(w.labelIndexes); err != nil {
 			return err
 		}
 		w.toc.PostingsTable = w.pos
+		// Postings Offset Table存储了一系列的postings offset entries
+		// 每个postings offset entry维护了label name/value以及它们的series在postings section中的位置
 		if err := w.writeOffsetTable(w.postings); err != nil {
 			return err
 		}
+		// TOC作为整个index的入口，指向index文件中的各个section，如果一个reference的值为0，这代表对应的
+		// sections并不存在
 		if err := w.writeTOC(); err != nil {
 			return err
 		}
@@ -310,9 +324,11 @@ func (w *Writer) writeMeta() error {
 // AddSeries adds the series one at a time along with its chunks.
 // AddSeries随着series的chunks将series写入index文件
 func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta) error {
+	// 确保在写入Series的Stage
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
 	}
+	// 确保series是按照label进行排序的
 	if labels.Compare(lset, w.lastSeries) <= 0 {
 		return errors.Errorf("out-of-order series added with label set %q", lset)
 	}
@@ -330,6 +346,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	if w.pos%16 != 0 {
 		return errors.Errorf("series write not 16-byte aligned at %d", w.pos)
 	}
+	// 记录下ref在index文件中的位置
 	w.seriesOffsets[ref] = w.pos / 16
 
 	w.buf2.Reset()
@@ -362,6 +379,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		// 写入chunk的最小时间，跨越的时间段以及c.Ref，Ref中包含了chunk所在文件的位置以及在文件中的位置
 		w.buf2.PutVarint64(c.MinTime)
 		w.buf2.PutUvarint64(uint64(c.MaxTime - c.MinTime))
+		// 写入这个chunk在chunk文件中的位置
 		w.buf2.PutUvarint64(c.Ref)
 		t0 := c.MaxTime
 		ref0 := int64(c.Ref)
@@ -369,6 +387,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		for _, c := range chunks[1:] {
 			w.buf2.PutUvarint64(uint64(c.MinTime - t0))
 			w.buf2.PutUvarint64(uint64(c.MaxTime - c.MinTime))
+			// t0为上一个chunk的MaxTime
 			t0 = c.MaxTime
 
 			w.buf2.PutVarint64(int64(c.Ref) - ref0)
@@ -449,20 +468,24 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 	}
 
 	w.labelIndexes = append(w.labelIndexes, hashEntry{
+		// 保存label的name，以及它相关的value都在哪些位置
 		keys:   names,
 		offset: w.pos,
 	})
 
 	w.buf2.Reset()
+	// 写入names的数目以及每个name的value的数目
 	w.buf2.PutBE32int(len(names))
 	w.buf2.PutBE32int(valt.Len())
 
 	// here we have an index for the symbol file if v2, otherwise it's an offset
+	// 写入各个value在symbols的引用
 	for _, v := range valt.entries {
 		index, ok := w.symbols[v]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", v)
 		}
+		// 写入每个value在symbols中的位置
 		w.buf2.PutBE32(index)
 	}
 
@@ -481,10 +504,13 @@ func (w *Writer) writeOffsetTable(entries []hashEntry) error {
 	w.buf2.PutBE32int(len(entries))
 
 	for _, e := range entries {
+		// 写入key的数目
 		w.buf2.PutUvarint(len(e.keys))
+		// 再写入具体的key
 		for _, k := range e.keys {
 			w.buf2.PutUvarintStr(k)
 		}
+		// 最后写入相关的引用在index section中的偏移位置
 		w.buf2.PutUvarint64(e.offset)
 	}
 
@@ -530,6 +556,7 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 	// Order of the references in the postings list does not imply order
 	// of the series references within the persisted block they are mapped to.
 	// We have to sort the new references again.
+	// 需要对refs重新进行排序
 	refs := w.uint32s[:0]
 
 	for it.Next() {
@@ -548,9 +575,11 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 	sort.Sort(uint32slice(refs))
 
 	w.buf2.Reset()
+	// 写入refs的数目
 	w.buf2.PutBE32int(len(refs))
 
 	for _, r := range refs {
+		// 写入series的refs
 		w.buf2.PutBE32(r)
 	}
 	w.uint32s = refs
@@ -616,6 +645,8 @@ type Reader struct {
 	// prevents memory faults when applications work with read symbols after
 	// the block has been unmapped. The older format has sparse indexes so a map
 	// must be used, but the new format is not so we can use a slice.
+	// 读到的symbols的缓存，从block读到的strings总会在这里用真的string替换，而不会直接用mmap的index file中的string
+	// 这能防止memory faluts
 	symbolsV1        map[uint32]string
 	symbolsV2        []string
 	symbolsTableSize uint64
@@ -682,6 +713,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	if r.b.Len() < HeaderLen {
 		return nil, errors.Wrap(encoding.ErrInvalidSize, "index header")
 	}
+	// 确认MagicNumber是否匹配
 	if m := binary.BigEndian.Uint32(r.b.Range(0, 4)); m != MagicIndex {
 		return nil, errors.Errorf("invalid magic number %x", m)
 	}
@@ -714,11 +746,13 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		allocatedSymbols[s] = s
 	}
 
+	// 载入index table相关的信息
 	if err := ReadOffsetTable(r.b, toc.LabelIndicesTable, func(key []string, off uint64) error {
 		if len(key) != 1 {
 			return errors.Errorf("unexpected key length for label indices table %d", len(key))
 		}
 
+		// 某个label name，以及它相关的label value存储的位置
 		r.labels[allocatedSymbols[key[0]]] = off
 		return nil
 	}); err != nil {
@@ -726,6 +760,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 
 	r.postings[""] = map[string]uint64{}
+	// 载入PostingTable相关的信息
 	if err := ReadOffsetTable(r.b, toc.PostingsTable, func(key []string, off uint64) error {
 		if len(key) != 2 {
 			return errors.Errorf("unexpected key length for posting table %d", len(key))
@@ -733,6 +768,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		if _, ok := r.postings[key[0]]; !ok {
 			r.postings[allocatedSymbols[key[0]]] = map[string]uint64{}
 		}
+		// 某个label pair，以及相应的postings对应的位置
 		r.postings[key[0]][allocatedSymbols[key[1]]] = off
 		return nil
 	}); err != nil {
@@ -777,6 +813,8 @@ func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 // ReadSymbols reads the symbol table fully into memory and allocates proper strings for them.
 // Strings backed by the mmap'd memory would cause memory faults if applications keep using them
 // after the reader is closed.
+// ReadSymbols将symbol table完全读入内容并且为它们分配合适的strings
+// 背后由mmap支持的Strings会发生内存错误，如果应用依然使用它，在reader被关闭以后
 func ReadSymbols(bs ByteSlice, version int, off int) ([]string, map[uint32]string, error) {
 	if off == 0 {
 		return nil, nil, nil
@@ -939,6 +977,7 @@ func (r *Reader) Postings(name, value string) (Postings, error) {
 	if !ok {
 		return EmptyPostings(), nil
 	}
+	// 读取相应的posting的位置
 	d := encoding.NewDecbufAt(r.b, int(off), castagnoliTable)
 	if d.Err() != nil {
 		return nil, errors.Wrap(d.Err(), "get postings entry")
@@ -986,7 +1025,9 @@ func (r *Reader) LabelNames() ([]string, error) {
 }
 
 type stringTuples struct {
+	// length为tuple的数目
 	length  int      // tuple length
+	// entries为具体的values
 	entries []string // flattened tuple entries
 }
 
@@ -997,6 +1038,7 @@ func NewStringTuples(entries []string, length int) (*stringTuples, error) {
 	return &stringTuples{entries: entries, length: length}, nil
 }
 
+// Len()为每个entries的数目
 func (t *stringTuples) Len() int                   { return len(t.entries) / t.length }
 func (t *stringTuples) At(i int) ([]string, error) { return t.entries[i : i+t.length], nil }
 
@@ -1054,9 +1096,11 @@ func (t *serializedStringTuples) At(i int) ([]string, error) {
 }
 
 // Decoder provides decoding methods for the v1 and v2 index file format.
+// Decoder提供了对于v1和v2的index file格式的解码方法
 //
 // It currently does not contain decoding methods for all entry types but can be extended
 // by them if there's demand.
+// 它现在不包含对于所有的entry类型的解码方法，但是可以按序扩展它们
 type Decoder struct {
 	LookupSymbol func(uint32) (string, error)
 }

@@ -1208,10 +1208,12 @@ func (h *Head) Tombstones() (TombstoneReader, error) {
 }
 
 // Index returns an IndexReader against the block.
+// Index返回对于block的IndexReader
 func (h *Head) Index() (IndexReader, error) {
 	return h.indexRange(math.MinInt64, math.MaxInt64), nil
 }
 
+// 返回*headIndexReader，headIndexReader是IndexReader的一个实现
 func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin
@@ -1220,10 +1222,12 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 }
 
 // Chunks returns a ChunkReader against the block.
+// Chunks返回对于block的一个ChunkReader
 func (h *Head) Chunks() (ChunkReader, error) {
 	return h.chunksRange(math.MinInt64, math.MaxInt64), nil
 }
 
+// 返回*headChunkReader，headChunkReader是ChunkReader的一个实现
 func (h *Head) chunksRange(mint, maxt int64) *headChunkReader {
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin

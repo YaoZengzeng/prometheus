@@ -154,9 +154,11 @@ type BlockReader interface {
 	Tombstones() (TombstoneReader, error)
 
 	// MinTime returns the min time of the block.
+	// MinTime返回这个block的最小时间
 	MinTime() int64
 
 	// MaxTime returns the max time of the block.
+	// MaxTime返回block的最大时间
 	MaxTime() int64
 }
 
@@ -180,6 +182,7 @@ type BlockMeta struct {
 	MaxTime int64 `json:"maxTime"`
 
 	// Stats about the contents of the block.
+	// 关于block内容的数据
 	Stats BlockStats `json:"stats,omitempty"`
 
 	// Information on compactions the block was created from.

@@ -508,6 +508,7 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, p
 	// 创建一个新的uid
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
+	// BlockMeta指定了Block的ULID以及这个Block最大最小时间
 	meta := &BlockMeta{
 		ULID:    uid,
 		MinTime: mint,
@@ -768,6 +769,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 		if err != nil {
 			return errors.Wrap(err, "read symbols")
 		}
+		// 统一存放所有的symbols
 		for s := range symbols {
 			allSymbols[s] = struct{}{}
 		}
@@ -924,6 +926,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			}
 			valset.set(l.Value)
 		}
+		// 重新构建series ID和它的label之间的索引
 		postings.Add(i, lset)
 
 		i++

@@ -562,6 +562,7 @@ func (w *WAL) Log(recs ...[]byte) error {
 	defer w.mtx.Unlock()
 	// Callers could just implement their own list record format but adding
 	// a bit of extra logic here frees them from that overhead.
+	// 调用者可以实现它们自己的list record format，但是在这里增加一点额外的逻辑，就能让它们免除额外的损耗
 	for i, r := range recs {
 		if err := w.log(r, i == len(recs)-1); err != nil {
 			return err
